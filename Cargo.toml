@@ -1,0 +1,11 @@
+[package]
+name = "dlpack"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ndarray = {version = "0.16", optional = true}
+
+
+[workspace]
+members = [".", "multi-languages"]
