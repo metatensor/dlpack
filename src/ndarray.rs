@@ -63,7 +63,7 @@ impl<'a, T, D> TryFrom<DLPackTensorRef<'a>> for ndarray::ArrayView<'a, T, D> whe
             return Err(DLPackNDarrayError::DeviceShouldBeCpu(tensor.device()))
         }
 
-        let ptr = tensor.as_ptr::<T>()?;
+        let ptr = tensor.data_ptr::<T>()?;
         let shape = tensor.shape().iter().map(|&s| s as usize).collect::<Vec<_>>();
         let shape = <D as DimFromVec>::dim_from_vec(shape)?;
 
@@ -96,7 +96,7 @@ impl<'a, T, D> TryFrom<DLPackTensorRefMut<'a>> for ndarray::ArrayViewMut<'a, T, 
             return Err(DLPackNDarrayError::DeviceShouldBeCpu(tensor.device()))
         }
 
-        let ptr = tensor.as_ptr_mut::<T>()?;
+        let ptr = tensor.data_ptr_mut::<T>()?;
         let shape = tensor.shape().iter().map(|&s| s as usize).collect::<Vec<_>>();
         let shape = <D as DimFromVec>::dim_from_vec(shape)?;
 
@@ -133,14 +133,14 @@ fn array_to_tensor_view<T, D>(array: ndarray::ArrayView<'_, T, D>) -> Result<sys
     // we need a `*const i64` for DLTensor, but we have usize and isize.
     // on 64-bit targets, isize will be the same as i64, so that's fine.
     if std::mem::size_of::<isize>() != std::mem::size_of::<i64>() {
-        todo!()
+        unimplemented!()
     }
     let strides = strides.as_ptr().cast_mut().cast();
 
     // usize will have the same binary representation as i64 for striclty
     // positive values, which is the most important case here.
     if std::mem::size_of::<isize>() != std::mem::size_of::<i64>() {
-        todo!()
+        unimplemented!()
     }
     let ndim = shape.len() as i32;
     let shape = shape.as_ptr().cast_mut().cast::<i64>();
@@ -269,7 +269,7 @@ impl<T, D> TryFrom<ndarray::Array<T, D>> for DLPackTensor where
         };
 
         return Ok(unsafe {
-            // SAFETY: TODO what are the invariants?
+            // SAFETY: we made sure the deleter is correct
             DLPackTensor::from_raw(tensor)
         });
     }

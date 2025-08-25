@@ -29,9 +29,9 @@ impl std::error::Error for CastError {
     }
 }
 
-/// TODO
+/// Trait to cast a DLPack pointer to a Rust pointer
 pub trait DLPackPointerCast: Sized {
-    /// TODO
+    /// Cast `ptr` (declared to have the `DLDataType` datatype) to a rust pointer.
     fn dlpack_ptr_cast(ptr: *mut std::os::raw::c_void, data_type: DLDataType) -> Result<*mut Self, CastError>;
 }
 
@@ -68,9 +68,8 @@ impl_dlpack_pointer_cast!(DLDataTypeCode::kDLFloat, f32, f64,);
 impl_dlpack_pointer_cast!(DLDataTypeCode::kDLBool, bool,);
 
 
-/// TODO
+/// Trait to get the DLPack datatype correspondong to a Rust datatype
 pub trait GetDLPackDataType {
-    /// TODO
     fn get_dlpack_data_type() -> DLDataType;
 }
 
