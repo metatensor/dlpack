@@ -143,6 +143,28 @@ pub enum DLDataTypeCode {
     kDLComplex = 5,
     /// boolean
     kDLBool = 6,
+    /// FP8 data types
+    kDLFloat8_e3m4 = 7,
+    kDLFloat8_e4m3 = 8,
+    kDLFloat8_e4m3b11fnuz = 9,
+    kDLFloat8_e4m3fn = 10,
+    kDLFloat8_e4m3fnuz = 11,
+    kDLFloat8_e5m2 = 12,
+    kDLFloat8_e5m2fnuz = 13,
+    kDLFloat8_e8m0fnu = 14,
+    /// FP6 data types
+    ///
+    /// Setting bits != 6 is currently unspecified, and the producer must ensure it is set
+    /// while the consumer must stop importing if the value is unexpected.
+    ///
+    kDLFloat6_e2m3fn = 15,
+    kDLFloat6_e3m2fn = 16,
+    /// FP4 data types
+    ///
+    /// Setting bits != 4 is currently unspecified, and the producer must ensure it is set
+    /// while the consumer must stop importing if the value is unexpected.
+    ///
+    kDLFloat4_e2m1fn = 17,
 }
 
 /// The data type the tensor can hold. The data type is assumed to follow the
@@ -183,6 +205,17 @@ impl std::fmt::Display for DLDataType {
             DLDataTypeCode::kDLBfloat => "bfloat",
             DLDataTypeCode::kDLComplex => "complex",
             DLDataTypeCode::kDLBool => "b",
+            DLDataTypeCode::kDLFloat8_e3m4 => "f8_e3m4",
+            DLDataTypeCode::kDLFloat8_e4m3 => "f8_e4m3",
+            DLDataTypeCode::kDLFloat8_e4m3b11fnuz => "f8_e4m3b11fnuz",
+            DLDataTypeCode::kDLFloat8_e4m3fn => "f8_e4m3fn",
+            DLDataTypeCode::kDLFloat8_e4m3fnuz => "f8_e4m3fnuz",
+            DLDataTypeCode::kDLFloat8_e5m2 => "f8_e5m2",
+            DLDataTypeCode::kDLFloat8_e5m2fnuz => "f8_e5m2fnuz",
+            DLDataTypeCode::kDLFloat8_e8m0fnu => "f8_e8m0fnu",
+            DLDataTypeCode::kDLFloat6_e2m3fn => "f8_e2m3fn",
+            DLDataTypeCode::kDLFloat6_e3m2fn => "f8_e3m2fn",
+            DLDataTypeCode::kDLFloat4_e2m1fn => "f8_e2m1fn",
         };
 
         if self.lanes == 1 {
