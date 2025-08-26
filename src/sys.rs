@@ -18,6 +18,13 @@ pub const DLPACK_FLAG_BITMASK_READ_ONLY: u64 = 0b0000000000000000000000000000000
 /// consumer, until the producer-provided deleter is invoked.
 pub const DLPACK_FLAG_BITMASK_IS_COPIED: u64 = 0b00000000000000000000000000000010;
 
+/// bit mask to indicate that whether a sub-byte type is packed or padded.
+///
+/// The default for sub-byte types (ex: fp4/fp6) is assumed packed. This flag can
+/// be set by the producer to signal that a tensor of sub-byte type is padded.
+// TODO(rg): Maybe just use flags...
+pub const DLPACK_FLAG_BITMASK_IS_SUBBYTE_TYPE_PADDED: u64 = 0b00000000000000000000000000000100;
+
 /// The DLPack version.
 ///
 /// A change in major version indicates that we have changed the data layout of
