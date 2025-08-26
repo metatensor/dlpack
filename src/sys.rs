@@ -123,6 +123,23 @@ impl std::fmt::Display for DLDevice {
     }
 }
 
+/// Represents an FP8 value with 4 exponent bits and 3 mantissa bits.
+#[derive(Debug, Clone, Copy)]
+#[repr(transparent)]
+pub struct Fp8E4m3fn(u8);
+
+/// Represents an FP6 value with 2 exponent bits and 3 mantissa bits.
+/// Stored in a u8, but conceptually only 6 bits are used.
+#[derive(Debug, Clone, Copy)]
+#[repr(transparent)]
+pub struct Fp6E2m3fn(u8);
+
+/// Represents an FP4 value with 2 exponent bits and 1 mantissa bit.
+/// Stored in a u8, but conceptually only 4 bits are used.
+#[derive(Debug, Clone, Copy)]
+#[repr(transparent)]
+pub struct Fp4E2m1fn(u8);
+
 /// The type code options DLDataType.
 #[repr(C, u8)]
 #[non_exhaustive]

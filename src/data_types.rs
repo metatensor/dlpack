@@ -1,4 +1,5 @@
 use super::sys::{DLDataType, DLDataTypeCode};
+use super::sys::{Fp4E2m1fn, Fp6E2m3fn, Fp8E4m3fn};
 
 #[derive(Debug)]
 pub enum CastError {
@@ -115,3 +116,59 @@ impl_get_dlpack_data_type!(DLDataTypeCode::kDLUInt, u8, u16, u32, u64,);
 impl_get_dlpack_data_type!(DLDataTypeCode::kDLInt, i8, i16, i32, i64,);
 impl_get_dlpack_data_type!(DLDataTypeCode::kDLFloat, f32, f64,);
 impl_get_dlpack_data_type!(DLDataTypeCode::kDLBool, bool,);
+
+// Need new macros for the sub-byte stuff
+macro_rules! impl_dlpack_pointer_cast_custom_bits {
+    ( $( ($type: ty, $dlpack_code: expr, $dlpack_bits: expr) ),+, ) => {
+        $(impl DLPackPointerCast for $type {
+            fn dlpack_ptr_cast(ptr: *mut std::os::raw::c_void, data_type: DLDataType) -> Result<*mut Self, CastError> {
+                if data_type.bits != $dlpack_bits || data_type.code != $dlpack_code {
+                    return Err(CastError::WrongType { dl_type: data_type, rust_type: stringify!($type)});
+                }
+
+                if data_type.lanes != 1 {
+                    return Err(CastError::Lanes { expected: 1, given: data_type.lanes as usize });
+                }
+
+                let ptr = ptr.cast::<Self>();
+                // no need to check for alignment, by construction is u8, still
+                if !ptr.is_aligned() {
+                    return Err(CastError::BadAlignment {
+                        ptr: ptr as usize,
+                        align: ::std::mem::align_of::<$type>(),
+                        rust_type: stringify!($type),
+                    });
+                }
+
+                return Ok(ptr);
+            }
+        })+
+    };
+}
+
+macro_rules! impl_get_dlpack_data_type_custom_bits {
+    ( $( ($type: ty, $dlpack_code: expr, $dlpack_bits: expr) ),+, ) => {
+        $(impl GetDLPackDataType for $type {
+            fn get_dlpack_data_type() -> DLDataType {
+                DLDataType {
+                    code: $dlpack_code,
+                    bits: $dlpack_bits,
+                    lanes: 1,
+                }
+            }
+        })+
+    };
+}
+
+// TODO(rg) Finish these
+impl_dlpack_pointer_cast_custom_bits!(
+    (Fp8E4m3fn, DLDataTypeCode::kDLFloat8_e4m3fn, 8),
+    (Fp6E2m3fn, DLDataTypeCode::kDLFloat6_e2m3fn, 6),
+    (Fp4E2m1fn, DLDataTypeCode::kDLFloat4_e2m1fn, 4),
+);
+
+impl_get_dlpack_data_type_custom_bits!(
+    (Fp8E4m3fn, DLDataTypeCode::kDLFloat8_e4m3fn, 8),
+    (Fp6E2m3fn, DLDataTypeCode::kDLFloat6_e2m3fn, 6),
+    (Fp4E2m1fn, DLDataTypeCode::kDLFloat4_e2m1fn, 4),
+);
