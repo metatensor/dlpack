@@ -7,7 +7,7 @@
 /// The current major version of dlpack
 pub const DLPACK_MAJOR_VERSION: u32 = 1;
 /// The current minor version of dlpack
-pub const DLPACK_MINOR_VERSION: u32 = 0;
+pub const DLPACK_MINOR_VERSION: u32 = 1;
 
 /// bit mask to indicate that the tensor is read only.
 pub const DLPACK_FLAG_BITMASK_READ_ONLY: u64 = 0b00000000000000000000000000000001;
