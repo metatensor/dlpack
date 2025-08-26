@@ -9,13 +9,9 @@ fn run() {
         let code = "np.array([[1, 2, 3], [4, 5, 6]], dtype=np.float32).__dlpack__()";
         let value = py.eval_bound(code, None, Some(&locals)).unwrap();
         let capsule: &Bound<PyCapsule> = value.downcast().unwrap();
-        let dl_tensor = unsafe {
-            &*capsule.pointer().cast::<dlpack::sys::DLTensor>()
-        };
+        let dl_tensor = unsafe { &*capsule.pointer().cast::<dlpack::sys::DLTensor>() };
 
-        let dlpack_ref = unsafe {
-            dlpack::DLPackTensorRef::from_raw(dl_tensor.clone())
-        };
+        let dlpack_ref = unsafe { dlpack::DLPackTensorRef::from_raw(dl_tensor.clone()) };
 
         let array = ndarray::ArrayView2::<f32>::try_from(dlpack_ref).unwrap();
         assert_eq!(array.shape(), [2, 3]);

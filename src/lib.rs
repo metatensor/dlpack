@@ -32,9 +32,7 @@ impl DLPackTensor {
     /// The `DLManagedTensorVersioned` should have a valid `deleter` that can
     /// be called from Rust.
     pub unsafe fn from_raw(tensor: sys::DLManagedTensorVersioned) -> DLPackTensor {
-        DLPackTensor {
-            raw: tensor,
-        }
+        DLPackTensor { raw: tensor }
     }
 
     /// Get a DLPack tensor reference from this owned tensor
@@ -47,8 +45,14 @@ impl DLPackTensor {
 
     /// Get a mutable DLPack tensor reference from this owned tensor
     pub fn as_mut(&mut self) -> DLPackTensorRefMut<'_> {
-        assert!(self.raw.flags & sys::DLPACK_FLAG_BITMASK_IS_COPIED == 0, "Can not create a mutable reference to a borrowed tensor");
-        assert!(self.raw.flags & sys::DLPACK_FLAG_BITMASK_READ_ONLY != 0, "Can not create a mutable reference to a read-only tensor");
+        assert!(
+            self.raw.flags & sys::DLPACK_FLAG_BITMASK_IS_COPIED == 0,
+            "Can not create a mutable reference to a borrowed tensor"
+        );
+        assert!(
+            self.raw.flags & sys::DLPACK_FLAG_BITMASK_READ_ONLY != 0,
+            "Can not create a mutable reference to a read-only tensor"
+        );
         // only if NOT read only + unique
         unsafe {
             // SAFETY: we are constaining the returned reference lifetime
@@ -58,13 +62,19 @@ impl DLPackTensor {
 
     /// Get a pointer to data in this tensor. This pointer can be a device
     /// pointer according to [`DLPackTensor::device`].
-    pub fn data_ptr<T>(&self) -> Result<*const T, CastError>  where T: DLPackPointerCast {
+    pub fn data_ptr<T>(&self) -> Result<*const T, CastError>
+    where
+        T: DLPackPointerCast,
+    {
         self.as_ref().data_ptr()
     }
 
     /// Get a mutable pointer to data in this tensor. This pointer can be a
     /// device pointer according to [`DLPackTensor::device`].
-    pub fn data_ptr_mut<T>(&mut self) -> Result<*mut T, CastError>  where T: DLPackPointerCast {
+    pub fn data_ptr_mut<T>(&mut self) -> Result<*mut T, CastError>
+    where
+        T: DLPackPointerCast,
+    {
         self.as_mut().data_ptr_mut()
     }
 
@@ -92,7 +102,10 @@ impl DLPackTensor {
             return None;
         }
         unsafe {
-            return Some(std::slice::from_raw_parts(self.raw.dl_tensor.strides, self.n_dims()));
+            return Some(std::slice::from_raw_parts(
+                self.raw.dl_tensor.strides,
+                self.n_dims(),
+            ));
         }
     }
 
@@ -121,13 +134,16 @@ impl<'a> DLPackTensorRef<'a> {
     pub unsafe fn from_raw(tensor: sys::DLTensor) -> DLPackTensorRef<'a> {
         DLPackTensorRef {
             raw: tensor,
-            phantom: std::marker::PhantomData
+            phantom: std::marker::PhantomData,
         }
     }
 
     /// Get a pointer to data in this tensor. This pointer can be a device
     /// pointer according to [`DLPackTensorRef::device`].
-    pub fn data_ptr<T>(&self) -> Result<*const T, CastError>  where T: DLPackPointerCast {
+    pub fn data_ptr<T>(&self) -> Result<*const T, CastError>
+    where
+        T: DLPackPointerCast,
+    {
         let ptr = self.raw.data.wrapping_add(self.byte_offset());
         return T::dlpack_ptr_cast(ptr, self.raw.dtype).map(|p| p.cast_const());
     }
@@ -185,7 +201,7 @@ impl<'a> DLPackTensorRefMut<'a> {
     pub unsafe fn from_raw(tensor: sys::DLTensor) -> DLPackTensorRefMut<'a> {
         DLPackTensorRefMut {
             raw: tensor,
-            phantom: std::marker::PhantomData
+            phantom: std::marker::PhantomData,
         }
     }
 
@@ -199,14 +215,20 @@ impl<'a> DLPackTensorRefMut<'a> {
 
     /// Get a pointer to data in this tensor. This pointer can be a device
     /// pointer according to [`DLPackTensorRefMut::device`].
-    pub fn data_ptr<T>(&self) -> Result<*const T, CastError>  where T: DLPackPointerCast {
+    pub fn data_ptr<T>(&self) -> Result<*const T, CastError>
+    where
+        T: DLPackPointerCast,
+    {
         let ptr = self.raw.data.wrapping_add(self.byte_offset());
         return T::dlpack_ptr_cast(ptr, self.raw.dtype).map(|p| p.cast_const());
     }
 
     /// Get a mutable pointer to data in this tensor. This pointer can be a
     /// device pointer according to [`DLPackTensorRefMut::device`].
-    pub fn data_ptr_mut<T>(&mut self) -> Result<*mut T, CastError>  where T: DLPackPointerCast {
+    pub fn data_ptr_mut<T>(&mut self) -> Result<*mut T, CastError>
+    where
+        T: DLPackPointerCast,
+    {
         let ptr = self.raw.data.wrapping_add(self.byte_offset());
         return T::dlpack_ptr_cast(ptr, self.raw.dtype);
     }

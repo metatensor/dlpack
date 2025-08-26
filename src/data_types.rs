@@ -2,9 +2,19 @@ use super::sys::{DLDataType, DLDataTypeCode};
 
 #[derive(Debug)]
 pub enum CastError {
-    WrongType { dl_type: DLDataType, rust_type: &'static str },
-    Lanes { expected: usize, given: usize },
-    BadAlignment { ptr: usize, align: usize, rust_type: &'static str },
+    WrongType {
+        dl_type: DLDataType,
+        rust_type: &'static str,
+    },
+    Lanes {
+        expected: usize,
+        given: usize,
+    },
+    BadAlignment {
+        ptr: usize,
+        align: usize,
+        rust_type: &'static str,
+    },
 }
 
 impl std::fmt::Display for CastError {
@@ -14,10 +24,22 @@ impl std::fmt::Display for CastError {
                 write!(f, "can not cast from {} to {}", dl_type, rust_type)
             }
             CastError::Lanes { expected, given } => {
-                write!(f, "invalid number of lanes: expected {}, but got {}", expected, given)
+                write!(
+                    f,
+                    "invalid number of lanes: expected {}, but got {}",
+                    expected, given
+                )
             }
-            CastError::BadAlignment { ptr, align, rust_type } => {
-                write!(f, "invalid pointer alignment: pointer at {:x} should be aligned to {} for {}", ptr, align, rust_type)
+            CastError::BadAlignment {
+                ptr,
+                align,
+                rust_type,
+            } => {
+                write!(
+                    f,
+                    "invalid pointer alignment: pointer at {:x} should be aligned to {} for {}",
+                    ptr, align, rust_type
+                )
             }
         }
     }
@@ -32,7 +54,10 @@ impl std::error::Error for CastError {
 /// Trait to cast a DLPack pointer to a Rust pointer
 pub trait DLPackPointerCast: Sized {
     /// Cast `ptr` (declared to have the `DLDataType` datatype) to a rust pointer.
-    fn dlpack_ptr_cast(ptr: *mut std::os::raw::c_void, data_type: DLDataType) -> Result<*mut Self, CastError>;
+    fn dlpack_ptr_cast(
+        ptr: *mut std::os::raw::c_void,
+        data_type: DLDataType,
+    ) -> Result<*mut Self, CastError>;
 }
 
 macro_rules! impl_dlpack_pointer_cast {
@@ -66,7 +91,6 @@ impl_dlpack_pointer_cast!(DLDataTypeCode::kDLUInt, u8, u16, u32, u64,);
 impl_dlpack_pointer_cast!(DLDataTypeCode::kDLInt, i8, i16, i32, i64,);
 impl_dlpack_pointer_cast!(DLDataTypeCode::kDLFloat, f32, f64,);
 impl_dlpack_pointer_cast!(DLDataTypeCode::kDLBool, bool,);
-
 
 /// Trait to get the DLPack datatype correspondong to a Rust datatype
 pub trait GetDLPackDataType {

@@ -1,9 +1,8 @@
 use ndarray::ShapeBuilder;
 
-use crate::sys;
-use crate::{DLPackTensor, DLPackTensorRefMut, DLPackTensorRef};
 use crate::data_types::{CastError, DLPackPointerCast, GetDLPackDataType};
-
+use crate::sys;
+use crate::{DLPackTensor, DLPackTensorRef, DLPackTensorRefMut};
 
 /// Possible error causes when converting between ndarray and DLPack
 #[derive(Debug)]
@@ -13,7 +12,7 @@ pub enum DLPackNDarrayError {
     /// The DLPack type can not be converted to a supported Rust type
     InvalidType(CastError),
     /// The shape/stride of the data does not match expectations
-    ShapeError(ndarray::ShapeError)
+    ShapeError(ndarray::ShapeError),
 }
 
 impl From<CastError> for DLPackNDarrayError {
@@ -31,7 +30,11 @@ impl From<ndarray::ShapeError> for DLPackNDarrayError {
 impl std::fmt::Display for DLPackNDarrayError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            DLPackNDarrayError::DeviceShouldBeCpu(device) => write!(f, "can not convert from device {} (only cpu is supported)", device),
+            DLPackNDarrayError::DeviceShouldBeCpu(device) => write!(
+                f,
+                "can not convert from device {} (only cpu is supported)",
+                device
+            ),
             DLPackNDarrayError::InvalidType(error) => write!(f, "type conversion error: {}", error),
             DLPackNDarrayError::ShapeError(error) => write!(f, "shape error: {}", error),
         }
@@ -52,7 +55,8 @@ impl std::error::Error for DLPackNDarrayError {
 /*                            DLPack => ndarray                              */
 /*****************************************************************************/
 
-impl<'a, T, D> TryFrom<DLPackTensorRef<'a>> for ndarray::ArrayView<'a, T, D> where
+impl<'a, T, D> TryFrom<DLPackTensorRef<'a>> for ndarray::ArrayView<'a, T, D>
+where
     T: DLPackPointerCast + 'static,
     D: DimFromVec + 'static,
 {
@@ -60,11 +64,15 @@ impl<'a, T, D> TryFrom<DLPackTensorRef<'a>> for ndarray::ArrayView<'a, T, D> whe
 
     fn try_from(tensor: DLPackTensorRef<'a>) -> Result<Self, Self::Error> {
         if tensor.device().device_type != sys::DLDeviceType::kDLCPU {
-            return Err(DLPackNDarrayError::DeviceShouldBeCpu(tensor.device()))
+            return Err(DLPackNDarrayError::DeviceShouldBeCpu(tensor.device()));
         }
 
         let ptr = tensor.data_ptr::<T>()?;
-        let shape = tensor.shape().iter().map(|&s| s as usize).collect::<Vec<_>>();
+        let shape = tensor
+            .shape()
+            .iter()
+            .map(|&s| s as usize)
+            .collect::<Vec<_>>();
         let shape = <D as DimFromVec>::dim_from_vec(shape)?;
 
         let array;
@@ -72,20 +80,17 @@ impl<'a, T, D> TryFrom<DLPackTensorRef<'a>> for ndarray::ArrayView<'a, T, D> whe
             let strides = strides.iter().map(|&s| s as usize).collect::<Vec<_>>();
             let strides = <D as DimFromVec>::dim_from_vec(strides)?;
             let shape = shape.strides(strides);
-            array = unsafe {
-                ndarray::ArrayView::<T, _>::from_shape_ptr(shape, ptr)
-            };
+            array = unsafe { ndarray::ArrayView::<T, _>::from_shape_ptr(shape, ptr) };
         } else {
-            array = unsafe {
-                ndarray::ArrayView::<T, _>::from_shape_ptr(shape, ptr)
-            };
+            array = unsafe { ndarray::ArrayView::<T, _>::from_shape_ptr(shape, ptr) };
         }
 
         return Ok(array);
     }
 }
 
-impl<'a, T, D> TryFrom<DLPackTensorRefMut<'a>> for ndarray::ArrayViewMut<'a, T, D> where
+impl<'a, T, D> TryFrom<DLPackTensorRefMut<'a>> for ndarray::ArrayViewMut<'a, T, D>
+where
     T: DLPackPointerCast + 'static,
     D: DimFromVec + 'static,
 {
@@ -93,11 +98,15 @@ impl<'a, T, D> TryFrom<DLPackTensorRefMut<'a>> for ndarray::ArrayViewMut<'a, T, 
 
     fn try_from(mut tensor: DLPackTensorRefMut<'a>) -> Result<Self, Self::Error> {
         if tensor.device().device_type != sys::DLDeviceType::kDLCPU {
-            return Err(DLPackNDarrayError::DeviceShouldBeCpu(tensor.device()))
+            return Err(DLPackNDarrayError::DeviceShouldBeCpu(tensor.device()));
         }
 
         let ptr = tensor.data_ptr_mut::<T>()?;
-        let shape = tensor.shape().iter().map(|&s| s as usize).collect::<Vec<_>>();
+        let shape = tensor
+            .shape()
+            .iter()
+            .map(|&s| s as usize)
+            .collect::<Vec<_>>();
         let shape = <D as DimFromVec>::dim_from_vec(shape)?;
 
         let array;
@@ -105,25 +114,23 @@ impl<'a, T, D> TryFrom<DLPackTensorRefMut<'a>> for ndarray::ArrayViewMut<'a, T, 
             let strides = strides.iter().map(|&s| s as usize).collect::<Vec<_>>();
             let strides = <D as DimFromVec>::dim_from_vec(strides)?;
             let shape = shape.strides(strides);
-            array = unsafe {
-                ndarray::ArrayViewMut::<T, _>::from_shape_ptr(shape, ptr)
-            };
+            array = unsafe { ndarray::ArrayViewMut::<T, _>::from_shape_ptr(shape, ptr) };
         } else {
-            array = unsafe {
-                ndarray::ArrayViewMut::<T, _>::from_shape_ptr(shape, ptr)
-            };
+            array = unsafe { ndarray::ArrayViewMut::<T, _>::from_shape_ptr(shape, ptr) };
         }
 
         return Ok(array);
     }
 }
 
-
 /*****************************************************************************/
 /*                            ndarray => DLPack                              */
 /*****************************************************************************/
 
-fn array_to_tensor_view<T, D>(array: ndarray::ArrayView<'_, T, D>) -> Result<sys::DLTensor, DLPackNDarrayError> where
+fn array_to_tensor_view<T, D>(
+    array: ndarray::ArrayView<'_, T, D>,
+) -> Result<sys::DLTensor, DLPackNDarrayError>
+where
     D: ndarray::Dimension,
     T: GetDLPackDataType,
 {
@@ -145,7 +152,6 @@ fn array_to_tensor_view<T, D>(array: ndarray::ArrayView<'_, T, D>) -> Result<sys
     let ndim = shape.len() as i32;
     let shape = shape.as_ptr().cast_mut().cast::<i64>();
 
-
     let device = sys::DLDevice {
         device_type: sys::DLDeviceType::kDLCPU,
         device_id: 0,
@@ -162,7 +168,8 @@ fn array_to_tensor_view<T, D>(array: ndarray::ArrayView<'_, T, D>) -> Result<sys
     });
 }
 
-impl<'a, T, D> TryFrom<ndarray::ArrayView<'a, T, D>> for DLPackTensorRef<'a> where
+impl<'a, T, D> TryFrom<ndarray::ArrayView<'a, T, D>> for DLPackTensorRef<'a>
+where
     D: ndarray::Dimension,
     T: GetDLPackDataType,
 {
@@ -178,7 +185,8 @@ impl<'a, T, D> TryFrom<ndarray::ArrayView<'a, T, D>> for DLPackTensorRef<'a> whe
     }
 }
 
-impl<'a, T, D> TryFrom<ndarray::ArrayViewMut<'a, T, D>> for DLPackTensorRefMut<'a> where
+impl<'a, T, D> TryFrom<ndarray::ArrayViewMut<'a, T, D>> for DLPackTensorRefMut<'a>
+where
     D: ndarray::Dimension,
     T: GetDLPackDataType,
 {
@@ -195,7 +203,8 @@ impl<'a, T, D> TryFrom<ndarray::ArrayViewMut<'a, T, D>> for DLPackTensorRefMut<'
     }
 }
 
-impl<'a, T, D> TryFrom<&'a ndarray::Array<T, D>> for DLPackTensorRef<'a> where
+impl<'a, T, D> TryFrom<&'a ndarray::Array<T, D>> for DLPackTensorRef<'a>
+where
     D: ndarray::Dimension,
     T: GetDLPackDataType,
 {
@@ -206,7 +215,8 @@ impl<'a, T, D> TryFrom<&'a ndarray::Array<T, D>> for DLPackTensorRef<'a> where
     }
 }
 
-impl<'a, T, D> TryFrom<&'a mut ndarray::Array<T, D>> for DLPackTensorRefMut<'a> where
+impl<'a, T, D> TryFrom<&'a mut ndarray::Array<T, D>> for DLPackTensorRefMut<'a>
+where
     D: ndarray::Dimension,
     T: GetDLPackDataType,
 {
@@ -230,7 +240,8 @@ unsafe extern "C" fn shape_strides_i64_box_deleter<T>(tensor: *mut sys::DLManage
     std::mem::drop(boxed);
 }
 
-impl<T, D> TryFrom<ndarray::Array<T, D>> for DLPackTensor where
+impl<T, D> TryFrom<ndarray::Array<T, D>> for DLPackTensor
+where
     D: ndarray::Dimension,
     T: GetDLPackDataType,
 {
@@ -238,9 +249,16 @@ impl<T, D> TryFrom<ndarray::Array<T, D>> for DLPackTensor where
 
     fn try_from(array: ndarray::Array<T, D>) -> Result<Self, Self::Error> {
         let shape = array.shape().iter().map(|&v| v as i64).collect();
-        let strides = ndarray::Array::strides(&array).iter().map(|&v| v as i64).collect();
+        let strides = ndarray::Array::strides(&array)
+            .iter()
+            .map(|&v| v as i64)
+            .collect();
 
-        let mut data = Box::new(ShapeStrideI64 { array, shape, strides });
+        let mut data = Box::new(ShapeStrideI64 {
+            array,
+            shape,
+            strides,
+        });
 
         let device = sys::DLDevice {
             device_type: sys::DLDeviceType::kDLCPU,
@@ -277,10 +295,12 @@ impl<T, D> TryFrom<ndarray::Array<T, D>> for DLPackTensor where
 
 /*****************************************************************************/
 
-
 /// Internal trait that will convert a Vec<usize> into one of ndarray's Dim
 /// type.
-pub trait DimFromVec where Self: ndarray::Dimension {
+pub trait DimFromVec
+where
+    Self: ndarray::Dimension,
+{
     fn dim_from_vec(vec: Vec<usize>) -> Result<Self, ndarray::ShapeError>;
 }
 
@@ -291,8 +311,10 @@ macro_rules! impl_dim_for_vec_array {
                 let shape: [ndarray::Ix; $N] = match vec.try_into() {
                     Ok(shape) => shape,
                     Err(_) => {
-                        return Err(ndarray::ShapeError::from_kind(ndarray::ErrorKind::IncompatibleShape));
-                    },
+                        return Err(ndarray::ShapeError::from_kind(
+                            ndarray::ErrorKind::IncompatibleShape,
+                        ));
+                    }
                 };
 
                 return Ok(ndarray::Dim(shape));
@@ -308,7 +330,6 @@ impl_dim_for_vec_array!(3);
 impl_dim_for_vec_array!(4);
 impl_dim_for_vec_array!(5);
 impl_dim_for_vec_array!(6);
-
 
 impl DimFromVec for ndarray::IxDyn {
     fn dim_from_vec(shape: Vec<usize>) -> Result<Self, ndarray::ShapeError> {

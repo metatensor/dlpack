@@ -4,12 +4,10 @@
 //! translated from `dlpack.h` header at version 1.0; and contains types
 //! suitable for use in C FFI.
 
-
 /// The current major version of dlpack
 pub const DLPACK_MAJOR_VERSION: u32 = 1;
 /// The current minor version of dlpack
 pub const DLPACK_MINOR_VERSION: u32 = 0;
-
 
 /// bit mask to indicate that the tensor is read only.
 pub const DLPACK_FLAG_BITMASK_READ_ONLY: u64 = 0b00000000000000000000000000000001;
@@ -43,7 +41,7 @@ pub struct DLPackVersion {
     /// DLPack major version.
     pub major: u32,
     /// DLPack minor version.
-    pub minor: u32
+    pub minor: u32,
 }
 
 /// The device type in DLDevice.
@@ -125,27 +123,26 @@ impl std::fmt::Display for DLDevice {
     }
 }
 
-
 /// The type code options DLDataType.
 #[repr(C, u8)]
 #[non_exhaustive]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DLDataTypeCode {
-  /// signed integer
-  kDLInt = 0,
-  /// unsigned integer
-  kDLUInt = 1,
-  /// IEEE floating point
-  kDLFloat = 2,
-  /// Opaque handle type, reserved for testing purposes. Frameworks need to
-  /// agree on the handle data type for the exchange to be well-defined.
-  kDLOpaqueHandle = 3,
-  /// bfloat16
-  kDLBfloat = 4,
-  /// complex number (C/C++/Python layout: compact struct per complex number)
-  kDLComplex = 5,
-  /// boolean
-  kDLBool = 6,
+    /// signed integer
+    kDLInt = 0,
+    /// unsigned integer
+    kDLUInt = 1,
+    /// IEEE floating point
+    kDLFloat = 2,
+    /// Opaque handle type, reserved for testing purposes. Frameworks need to
+    /// agree on the handle data type for the exchange to be well-defined.
+    kDLOpaqueHandle = 3,
+    /// bfloat16
+    kDLBfloat = 4,
+    /// complex number (C/C++/Python layout: compact struct per complex number)
+    kDLComplex = 5,
+    /// boolean
+    kDLBool = 6,
 }
 
 /// The data type the tensor can hold. The data type is assumed to follow the
@@ -268,7 +265,6 @@ pub struct DLManagedTensor {
     /// the argument self as well.
     pub deleter: Option<unsafe extern "C" fn(_self: *mut DLManagedTensor) -> ()>,
 }
-
 
 /// A versioned and managed C Tensor object, manage memory of DLTensor.
 ///
