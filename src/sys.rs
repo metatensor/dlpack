@@ -1,5 +1,4 @@
 #![allow(non_camel_case_types)]
-#![allow(conflicting_repr_hints)]
 //! This module contains the low-level API for dlpack. It was manually
 //! translated from `dlpack.h` header at version 1.0; and contains types
 //! suitable for use in C FFI.
@@ -51,7 +50,7 @@ pub struct DLPackVersion {
 }
 
 /// The device type in DLDevice.
-#[repr(C, u32)]
+#[repr(u32)]
 #[non_exhaustive]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DLDeviceType {
@@ -131,7 +130,7 @@ impl std::fmt::Display for DLDevice {
 
 
 /// The type code options DLDataType.
-#[repr(C, u8)]
+#[repr(u8)]
 #[non_exhaustive]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DLDataTypeCode {
