@@ -10,20 +10,19 @@ pub const DLPACK_MAJOR_VERSION: u32 = 1;
 pub const DLPACK_MINOR_VERSION: u32 = 1;
 
 /// bit mask to indicate that the tensor is read only.
-pub const DLPACK_FLAG_BITMASK_READ_ONLY: u64 = 0b00000000000000000000000000000001;
+pub const DLPACK_FLAG_BITMASK_READ_ONLY: u64 = 1 << 0;
 
 /// bit mask to indicate that the tensor is a copy made by the producer.
 ///
 /// If set, the tensor is considered solely owned throughout its lifetime by the
 /// consumer, until the producer-provided deleter is invoked.
-pub const DLPACK_FLAG_BITMASK_IS_COPIED: u64 = 0b00000000000000000000000000000010;
+pub const DLPACK_FLAG_BITMASK_IS_COPIED: u64 = 1 << 1;
 
 /// bit mask to indicate that whether a sub-byte type is packed or padded.
 ///
 /// The default for sub-byte types (ex: fp4/fp6) is assumed packed. This flag can
 /// be set by the producer to signal that a tensor of sub-byte type is padded.
-// TODO(rg): Maybe just use flags...
-pub const DLPACK_FLAG_BITMASK_IS_SUBBYTE_TYPE_PADDED: u64 = 0b00000000000000000000000000000100;
+pub const DLPACK_FLAG_BITMASK_IS_SUBBYTE_TYPE_PADDED: u64 = 1 << 2;
 
 /// The DLPack version.
 ///
