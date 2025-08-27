@@ -6,6 +6,10 @@ edition = "2021"
 [dependencies]
 ndarray = {version = "0.16", optional = true}
 
+[features]
+ndarray = ["dep:ndarray"]
+
 
 [workspace]
-members = [".", "multi-languages"]
+relsover = "3"
+members = ["multi-lingual"]
