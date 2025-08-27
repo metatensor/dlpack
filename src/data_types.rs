@@ -95,17 +95,76 @@ impl_get_dlpack_data_type!(DLDataTypeCode::kDLBool, bool,);
 
 #[cfg(test)]
 mod tests {
-    use super::GetDLPackDataType;
+    use super::*;
+    use crate::sys::{DLDataType, DLDataTypeCode};
 
     #[test]
     fn test_get_dlpack_data_type() {
         let dtype = u32::get_dlpack_data_type();
-
-        assert_eq!(dtype.code, super::super::sys::DLDataTypeCode::kDLUInt);
+        assert_eq!(dtype.code, DLDataTypeCode::kDLUInt);
         assert_eq!(dtype.bits, 32);
 
         let dtype = f32::get_dlpack_data_type();
-        assert_eq!(dtype.code, super::super::sys::DLDataTypeCode::kDLFloat);
+        assert_eq!(dtype.code, DLDataTypeCode::kDLFloat);
         assert_eq!(dtype.bits, 32);
+    }
+
+    #[test]
+    fn test_dlpack_pointer_cast() {
+        let value: u32 = 42;
+        let mut mock_data = value;
+        let ptr = &mut mock_data as *mut u32 as *mut std::os::raw::c_void;
+
+        let dtype = DLDataType {
+            code: DLDataTypeCode::kDLUInt,
+            bits: 32,
+            lanes: 1,
+        };
+        let result = u32::dlpack_ptr_cast(ptr, dtype);
+        assert!(result.is_ok());
+        let cast_ptr = result.unwrap();
+        unsafe {
+            assert_eq!(*cast_ptr, 42);
+        }
+
+        let wrong_type = DLDataType {
+            code: DLDataTypeCode::kDLFloat,
+            bits: 32,
+            lanes: 1,
+        };
+        let result = u32::dlpack_ptr_cast(ptr, wrong_type);
+        assert!(result.is_err());
+        if let Err(CastError::WrongType { dl_type, .. }) = result {
+            assert_eq!(dl_type.code, DLDataTypeCode::kDLFloat);
+        } else {
+            panic!("Expected a WrongType error");
+        }
+        
+        let wrong_lanes = DLDataType {
+            code: DLDataTypeCode::kDLUInt,
+            bits: 32,
+            lanes: 2,
+        };
+        let result = u32::dlpack_ptr_cast(ptr, wrong_lanes);
+        assert!(result.is_err());
+        if let Err(CastError::Lanes { given, .. }) = result {
+            assert_eq!(given, 2);
+        } else {
+            panic!("Expected a Lanes error");
+        }
+
+        let mut correctly_aligned = [0_u8; 8];
+        let base_ptr = correctly_aligned.as_mut_ptr().cast::<std::os::raw::c_void>();
+        let unaligned_ptr = unsafe { base_ptr.add(1) };
+        let result = u64::dlpack_ptr_cast(unaligned_ptr, DLDataType {
+            code: DLDataTypeCode::kDLUInt,
+            bits: 64,
+            lanes: 1,
+        });
+        assert!(result.is_err());
+        if let Err(CastError::BadAlignment { .. }) = result {
+        } else {
+            panic!("Expected a BadAlignment error");
+        }
     }
 }
