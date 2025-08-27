@@ -69,6 +69,7 @@ impl_dlpack_pointer_cast!(DLDataTypeCode::kDLBool, bool,);
 
 
 /// Trait to get the DLPack datatype correspondong to a Rust datatype
+#[allow(dead_code)]
 pub trait GetDLPackDataType {
     fn get_dlpack_data_type() -> DLDataType;
 }
@@ -91,3 +92,20 @@ impl_get_dlpack_data_type!(DLDataTypeCode::kDLUInt, u8, u16, u32, u64,);
 impl_get_dlpack_data_type!(DLDataTypeCode::kDLInt, i8, i16, i32, i64,);
 impl_get_dlpack_data_type!(DLDataTypeCode::kDLFloat, f32, f64,);
 impl_get_dlpack_data_type!(DLDataTypeCode::kDLBool, bool,);
+
+#[cfg(test)]
+mod tests {
+    use super::GetDLPackDataType;
+
+    #[test]
+    fn test_get_dlpack_data_type() {
+        let dtype = u32::get_dlpack_data_type();
+
+        assert_eq!(dtype.code, super::super::sys::DLDataTypeCode::kDLUInt);
+        assert_eq!(dtype.bits, 32);
+
+        let dtype = f32::get_dlpack_data_type();
+        assert_eq!(dtype.code, super::super::sys::DLDataTypeCode::kDLFloat);
+        assert_eq!(dtype.bits, 32);
+    }
+}
