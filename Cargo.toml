@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 ndarray = {version = "0.16", optional = true}
+pyo3 = "0.25.1"
 
 [features]
 ndarray = ["dep:ndarray"]
