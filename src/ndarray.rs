@@ -265,3 +265,134 @@ impl DimFromVec for ndarray::IxDyn {
         return Ok(ndarray::Dim(shape));
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::sys::{DLDevice, DLDeviceType, DLTensor};
+    use ndarray::prelude::*;
+
+    #[test]
+    fn test_dlpack_to_ndarray() {
+        let mut data = vec![1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0];
+        let mut shape = vec![2i64, 3];
+        let mut strides = vec![3i64, 1];
+
+        let dl_tensor = DLTensor {
+            data: data.as_mut_ptr() as *mut _,
+            device: DLDevice {
+                device_type: DLDeviceType::kDLCPU,
+                device_id: 0,
+            },
+            ndim: 2,
+            dtype: f32::get_dlpack_data_type(),
+            shape: shape.as_mut_ptr(),
+            strides: strides.as_mut_ptr(),
+            byte_offset: 0,
+        };
+
+        let dlpack_ref = unsafe { DLPackTensorRef::from_raw(dl_tensor) };
+        let array_view = ArrayView2::<f32>::try_from(dlpack_ref).unwrap();
+
+        let expected = arr2(&[[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]);
+        assert_eq!(array_view, expected);
+    }
+
+    #[test]
+    fn test_dlpack_to_ndarray_f_contiguous() {
+        let mut data = vec![1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0];
+        let mut shape = vec![2i64, 3];
+        // Fortran-contiguous strides
+        let mut strides = vec![1i64, 2];
+
+        let dl_tensor = DLTensor {
+            data: data.as_mut_ptr() as *mut _,
+            device: DLDevice {
+                device_type: DLDeviceType::kDLCPU,
+                device_id: 0,
+            },
+            ndim: 2,
+            dtype: f32::get_dlpack_data_type(),
+            shape: shape.as_mut_ptr(),
+            strides: strides.as_mut_ptr(),
+            byte_offset: 0,
+        };
+
+        let dlpack_ref = unsafe { DLPackTensorRef::from_raw(dl_tensor) };
+        let array_view = ArrayView2::<f32>::try_from(dlpack_ref).unwrap();
+
+        assert!(!array_view.is_standard_layout());
+        let expected = arr2(&[[1.0, 3.0, 5.0], [2.0, 4.0, 6.0]]);
+        assert_eq!(array_view, expected);
+    }
+
+    #[test]
+    fn test_dlpack_to_ndarray_wrong_device() {
+        let mut data = vec![1.0f32];
+        let mut shape = vec![1i64];
+
+        let dl_tensor = DLTensor {
+            data: data.as_mut_ptr() as *mut _,
+            device: DLDevice {
+                device_type: DLDeviceType::kDLCUDA,
+                device_id: 0,
+            },
+            ndim: 1,
+            dtype: f32::get_dlpack_data_type(),
+            shape: shape.as_mut_ptr(),
+            strides: std::ptr::null_mut(),
+            byte_offset: 0,
+        };
+
+        let dlpack_ref = unsafe { DLPackTensorRef::from_raw(dl_tensor) };
+        let result = ArrayView1::<f32>::try_from(dlpack_ref);
+        assert!(matches!(result, Err(DLPackNDarrayError::DeviceShouldBeCpu(_))));
+    }
+
+    #[test]
+    fn test_ndarray_to_dlpack() {
+        let array = arr2(&[[1i64, 2, 3], [4, 5, 6]]);
+        let dlpack_ref = DLPackTensorRef::try_from(array.view()).unwrap();
+        let raw = dlpack_ref.raw;
+
+        assert_eq!(raw.ndim, 2);
+        assert_eq!(raw.device.device_type, DLDeviceType::kDLCPU);
+        assert_eq!(raw.dtype, i64::get_dlpack_data_type());
+        assert_eq!(raw.data as *const i64, array.as_ptr());
+        
+        let shape = unsafe { std::slice::from_raw_parts(raw.shape, 2) };
+        assert_eq!(shape, &[2, 3]);
+
+        let strides = unsafe { std::slice::from_raw_parts(raw.strides, 2) };
+        assert_eq!(strides, &[3, 1]);
+    }
+
+    #[test]
+    fn test_dlpack_to_ndarray_mut() {
+        let mut data = vec![1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0];
+        let mut shape = vec![2i64, 3];
+        let mut strides = vec![3i64, 1];
+
+        let dl_tensor = DLTensor {
+            data: data.as_mut_ptr() as *mut _,
+            device: DLDevice {
+                device_type: DLDeviceType::kDLCPU,
+                device_id: 0,
+            },
+            ndim: 2,
+            dtype: f32::get_dlpack_data_type(),
+            shape: shape.as_mut_ptr(),
+            strides: strides.as_mut_ptr(),
+            byte_offset: 0,
+        };
+
+        let dlpack_ref_mut = unsafe { DLPackTensorRefMut::from_raw(dl_tensor) };
+        let mut array_view_mut = ArrayViewMut2::<f32>::try_from(dlpack_ref_mut).unwrap();
+
+        array_view_mut[[0, 0]] = 100.0;
+        assert_eq!(data[0], 100.0);
+
+        let expected = arr2(&[[100.0, 2.0, 3.0], [4.0, 5.0, 6.0]]);
+        assert_eq!(array_view_mut, expected);
+    }
+}
