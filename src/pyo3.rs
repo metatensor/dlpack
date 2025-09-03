@@ -5,7 +5,7 @@ use pyo3::prelude::*;
 use pyo3::ffi;
 
 /*****************************************************************************/
-/* ndarray => Python (via PyO3)                         */
+/*                      ndarray => Python (via PyO3)                         */
 /*****************************************************************************/
 
 // The name for the PyCapsule, as per the DLPack standard.
