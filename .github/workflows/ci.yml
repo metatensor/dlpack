@@ -42,4 +42,4 @@ jobs:
           RUSTC_WRAPPER: "sccache"
         run: |
           pip install numpy pydlpack
-          cargo test --features ndarray
+          cargo test --all-features
