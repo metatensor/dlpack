@@ -1,5 +1,6 @@
 use crate::data_types::GetDLPackDataType;
 use crate::sys;
+use ndarray::{Array, Dimension};
 use pyo3::ffi;
 use pyo3::prelude::*;
 use std::ffi::CStr;
@@ -36,13 +37,10 @@ unsafe extern "C" fn pycapsule_deleter(capsule: *mut ffi::PyObject) {
     // DLManagedTensorVersioned struct itself is freed.
 }
 
-pub fn ndarray_to_py_capsule<'py, T, D>(
-    py: Python<'py>,
-    array: ndarray::Array<T, D>,
-) -> PyResult<PyObject>
+/// A generic helper function that converts an `ndarray::Array` into a `DLManagedTensorVersioned`.
+fn ndarray_to_managed_tensor<T, D>(array: Array<T, D>) -> sys::DLManagedTensorVersioned
 where
-    D: ndarray::Dimension,
-    // 'static bound is needed for the deleter XXX(rg): Not pretty..
+    D: Dimension,
     T: GetDLPackDataType + 'static,
 {
     let shape = array.shape().iter().map(|&v| v as i64).collect();
@@ -66,17 +64,23 @@ where
         byte_offset: 0,
     };
 
-    let managed_tensor = sys::DLManagedTensorVersioned {
+    sys::DLManagedTensorVersioned {
         version: sys::DLPackVersion {
             major: sys::DLPACK_MAJOR_VERSION,
             minor: sys::DLPACK_MINOR_VERSION,
         },
         manager_ctx: Box::into_raw(data_ctx).cast(),
-        deleter: Some(shape_strides_i64_box_deleter::<ndarray::Array<T, D>>),
-        flags: sys::DLPACK_FLAG_BITMASK_IS_COPIED,
-        dl_tensor: dl_tensor,
-    };
+        deleter: Some(shape_strides_i64_box_deleter::<Array<T, D>>),
+        flags: 0,
+        dl_tensor,
+    }
+}
 
+/// A generic helper function to wrap `DLManagedTensorVersioned` in a `PyCapsule`.
+fn managed_tensor_to_py_capsule(
+    py: Python,
+    managed_tensor: sys::DLManagedTensorVersioned,
+) -> PyResult<PyObject> {
     let managed_tensor_ptr = Box::into_raw(Box::new(managed_tensor));
 
     let capsule = unsafe {
@@ -87,6 +91,17 @@ where
         )
     };
     Ok(unsafe { PyObject::from_owned_ptr(py, capsule) })
+}
+
+/// A generic function to convert a Rust `ndarray::Array` into a Python `PyCapsule`.
+/// This function is not exposed to Python, but is used in tests.
+fn ndarray_to_py_capsule<'py, T, D>(py: Python<'py>, array: Array<T, D>) -> PyResult<PyObject>
+where
+    D: Dimension,
+    T: GetDLPackDataType + 'static, // 'static is needed for the deleter
+{
+    let managed_tensor = ndarray_to_managed_tensor(array);
+    managed_tensor_to_py_capsule(py, managed_tensor)
 }
 
 // Array + other data needed alive inside the DLPackTensor
