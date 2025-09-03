@@ -117,52 +117,70 @@ pub unsafe extern "C" fn shape_strides_i64_box_deleter<T>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::DLPackTensorRef;
+    use ndarray::{arr2, ArrayView2};
     use pyo3::ffi::c_str;
     use pyo3::types::{PyCapsule, PyDict};
-    use pyo3::PyResult;
 
-    #[test]
-    fn test_numpy_to_ndarray_via_dlpack() -> PyResult<()> {
-        pyo3::prepare_freethreaded_python();
-        Python::with_gil(|py| {
-            let locals = PyDict::new(py);
-            locals.set_item("np", py.import("numpy")?)?;
-            locals.set_item("dlpack", py.import("dlpack")?)?;
+    macro_rules! test_numpy_to_ndarray_via_dlpack_dtype {
+        ($test_name:ident, $rust_type:ty, $np_dtype:expr) => {
+            #[test]
+            fn $test_name() -> PyResult<()> {
+                pyo3::prepare_freethreaded_python();
+                Python::with_gil(|py| {
+                    let locals = PyDict::new(py);
+                    locals.set_item("np", py.import("numpy")?)?;
+                    locals.set_item("dlpack", py.import("dlpack")?)?;
+                    locals.set_item("dtype", $np_dtype)?;
 
-            let code = c_str!(
-                r"
-arr = np.array([[1, 2, 3], [4, 5, 6]], dtype=np.float32)
+                    let code = c_str!(
+                        r#"
+arr = np.array([[1, 2, 3], [4, 5, 6]], dtype=dtype)
 dl_obj = dlpack.asdlpack(arr)
 result_capsule = dl_obj.__dlpack__()
-"
-            );
-            py.run(code, None, Some(&locals))?;
+"#
+                    );
+                    py.run(code, None, Some(&locals))?;
 
-            let result = locals.get_item("result_capsule")?.unwrap();
-            let capsule: Bound<PyCapsule> = result.extract()?;
+                    let result = locals.get_item("result_capsule")?.unwrap();
+                    let capsule: Bound<PyCapsule> = result.extract()?;
 
-            let dl_tensor_ptr = capsule.pointer() as *const sys::DLTensor;
-            let dlpack_ref = unsafe { crate::DLPackTensorRef::from_raw((*dl_tensor_ptr).clone()) };
-            let array = ndarray::ArrayView2::<f32>::try_from(dlpack_ref).unwrap();
+                    let dl_tensor_ptr = capsule.pointer() as *const sys::DLTensor;
+                    let dlpack_ref =
+                        unsafe { crate::DLPackTensorRef::from_raw((*dl_tensor_ptr).clone()) };
+                    let array = ArrayView2::<$rust_type>::try_from(dlpack_ref).unwrap();
 
-            assert_eq!(array.shape(), [2, 3]);
-            assert_eq!(array, ndarray::arr2(&[[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]));
-            Ok(())
-        })
+                    let expected = arr2(&[
+                        [1 as $rust_type, 2 as $rust_type, 3 as $rust_type],
+                        [4 as $rust_type, 5 as $rust_type, 6 as $rust_type],
+                    ]);
+                    assert_eq!(array.shape(), [2, 3]);
+                    assert_eq!(array, expected);
+                    Ok(())
+                })
+            }
+        };
     }
 
-    #[test]
-    fn test_ndarray_to_numpy_via_dlpack() -> PyResult<()> {
-        pyo3::prepare_freethreaded_python();
-        Python::with_gil(|py| {
-            let rust_array = ndarray::arr2(&[[1.0f32, 2.0, 3.0], [4.0, 5.0, 6.0]]);
-            let py_capsule = ndarray_to_py_capsule(py, rust_array).unwrap();
-            let locals = PyDict::new(py);
-            locals.set_item("np", py.import("numpy")?)?;
-            locals.set_item("rust_capsule", py_capsule)?;
+    macro_rules! test_ndarray_to_numpy_via_dlpack_dtype {
+        ($test_name:ident, $rust_type:ty, $np_dtype:expr) => {
+            #[test]
+            fn $test_name() -> PyResult<()> {
+                pyo3::prepare_freethreaded_python();
+                Python::with_gil(|py| {
+                    let rust_array = arr2(&[
+                        [1 as $rust_type, 2 as $rust_type, 3 as $rust_type],
+                        [4 as $rust_type, 5 as $rust_type, 6 as $rust_type],
+                    ]);
+                    let py_capsule = ndarray_to_py_capsule(py, rust_array).unwrap();
 
-            let setup_code = c_str!(
-                "
+                    let locals = PyDict::new(py);
+                    locals.set_item("np", py.import("numpy")?)?;
+                    locals.set_item("rust_capsule", py_capsule)?;
+                    locals.set_item("dtype", $np_dtype)?;
+
+                    let code = c_str!(
+                        r#"
 class DLPackWrapper:
     def __init__(self, capsule):
         self.capsule = capsule
@@ -170,20 +188,29 @@ class DLPackWrapper:
         return self.capsule
 
 rust_dlpack_obj = DLPackWrapper(rust_capsule)
-"
-            );
-            py.run(setup_code, None, Some(&locals))?;
-
-            let test_code = c_str!(
-                r"
 arr = np.from_dlpack(rust_dlpack_obj)
-expected = np.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])
+expected = np.array([[1, 2, 3], [4, 5, 6]], dtype=dtype)
 assert arr.shape == (2, 3)
 assert np.allclose(arr, expected)
-"
-            );
-            py.run(test_code, None, Some(&locals))?;
-            Ok(())
-        })
+"#
+                    );
+                    py.run(code, None, Some(&locals))?;
+                    Ok(())
+                })
+            }
+        };
     }
+
+    // Instantiate the integration tests for various dtypes
+    test_numpy_to_ndarray_via_dlpack_dtype!(test_from_numpy_f32, f32, "float32");
+    test_ndarray_to_numpy_via_dlpack_dtype!(test_to_numpy_f32, f32, "float32");
+
+    test_numpy_to_ndarray_via_dlpack_dtype!(test_from_numpy_f64, f64, "float64");
+    test_ndarray_to_numpy_via_dlpack_dtype!(test_to_numpy_f64, f64, "float64");
+
+    test_numpy_to_ndarray_via_dlpack_dtype!(test_from_numpy_i32, i32, "int32");
+    test_ndarray_to_numpy_via_dlpack_dtype!(test_to_numpy_i32, i32, "int32");
+
+    test_numpy_to_ndarray_via_dlpack_dtype!(test_from_numpy_i64, i64, "int64");
+    test_ndarray_to_numpy_via_dlpack_dtype!(test_to_numpy_i64, i64, "int64");
 }
