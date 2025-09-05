@@ -1,8 +1,8 @@
-use crate::data_types::GetDLPackDataType;
 use crate::sys;
-use ndarray::{Array, Dimension};
+use pyo3::exceptions::PyValueError;
 use pyo3::ffi;
 use pyo3::prelude::*;
+use pyo3::types::PyCapsule;
 use std::ffi::CStr;
 
 /*****************************************************************************/
@@ -13,6 +13,10 @@ use std::ffi::CStr;
 const DLTENSOR_VERSIONED_NAME: &CStr =
     unsafe { CStr::from_bytes_with_nul_unchecked(b"dltensor_versioned\0") };
 
+// This deleter is called by the Python garbage collector when the PyCapsule's
+// reference count goes to zero. It reclaims the Box'd DLManagedTensorVersioned
+// and calls its *original* deleter, which is responsible for freeing the
+// underlying array data.
 unsafe extern "C" fn pycapsule_deleter(capsule: *mut ffi::PyObject) {
     if ffi::PyCapsule_IsValid(capsule, DLTENSOR_VERSIONED_NAME.as_ptr()) == 0 {
         return;
@@ -25,116 +29,60 @@ unsafe extern "C" fn pycapsule_deleter(capsule: *mut ffi::PyObject) {
         return;
     }
 
-    // Reclaim ownership.
+    // Reclaim ownership of the Box<DLManagedTensorVersioned>.
     let mut boxed_managed_tensor = Box::from_raw(managed_tensor_ptr);
 
-    // Call the deleter for the underlying data (the ndarray).
+    // Call the original deleter function for the underlying data (e.g., the ndarray).
     if let Some(deleter) = boxed_managed_tensor.deleter {
         deleter(boxed_managed_tensor.as_mut());
     }
-
-    // `boxed_managed_tensor` goes out of scope so the memory for the
-    // DLManagedTensorVersioned struct itself is freed.
 }
 
-/// A generic helper function that converts an `ndarray::Array` into a `DLManagedTensorVersioned`.
-fn ndarray_to_managed_tensor<T, D>(array: Array<T, D>) -> sys::DLManagedTensorVersioned
+pub struct DLPackPyCapsule(pub Py<PyCapsule>);
+
+pub trait IntoDLPackPyCapsule: Sized {
+    fn into_dlpack_pycapsule(self) -> PyResult<DLPackPyCapsule>;
+}
+
+/// A generic implementation to convert any type that can be converted into a
+/// `DLManagedTensorVersioned` into our local `DLPackPyCapsule`.
+impl<T> IntoDLPackPyCapsule for T
 where
-    D: Dimension,
-    T: GetDLPackDataType + 'static,
+    T: TryInto<sys::DLManagedTensorVersioned>,
+    T::Error: std::fmt::Display,
 {
-    let shape = array.shape().iter().map(|&v| v as i64).collect();
-    let strides = array.strides().iter().map(|v| *v as i64).collect();
-    let mut data_ctx = Box::new(ShapeStrideI64 {
-        array,
-        shape,
-        strides,
-    });
+    fn into_dlpack_pycapsule(self) -> PyResult<DLPackPyCapsule> {
+        let managed_tensor = self
+            .try_into()
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
 
-    let dl_tensor = sys::DLTensor {
-        data: data_ctx.array.as_mut_ptr().cast(),
-        device: sys::DLDevice {
-            device_type: sys::DLDeviceType::kDLCPU,
-            device_id: 0,
-        },
-        ndim: data_ctx.shape.len() as i32,
-        dtype: T::get_dlpack_data_type(),
-        shape: data_ctx.shape.as_mut_ptr(),
-        strides: data_ctx.strides.as_mut_ptr(),
-        byte_offset: 0,
-    };
+        let managed_tensor_ptr = Box::into_raw(Box::new(managed_tensor));
 
-    sys::DLManagedTensorVersioned {
-        version: sys::DLPackVersion {
-            major: sys::DLPACK_MAJOR_VERSION,
-            minor: sys::DLPACK_MINOR_VERSION,
-        },
-        manager_ctx: Box::into_raw(data_ctx).cast(),
-        deleter: Some(shape_strides_i64_box_deleter::<Array<T, D>>),
-        flags: 0,
-        dl_tensor,
+        Python::with_gil(|py| {
+            let capsule = unsafe {
+                Py::from_owned_ptr(
+                    py,
+                    ffi::PyCapsule_New(
+                        managed_tensor_ptr as *mut _,
+                        DLTENSOR_VERSIONED_NAME.as_ptr(),
+                        Some(pycapsule_deleter),
+                    ),
+                )
+            };
+            Ok(DLPackPyCapsule(capsule))
+        })
     }
-}
-
-/// A generic helper function to wrap `DLManagedTensorVersioned` in a `PyCapsule`.
-fn managed_tensor_to_py_capsule(
-    py: Python,
-    managed_tensor: sys::DLManagedTensorVersioned,
-) -> PyResult<PyObject> {
-    let managed_tensor_ptr = Box::into_raw(Box::new(managed_tensor));
-
-    let capsule = unsafe {
-        ffi::PyCapsule_New(
-            managed_tensor_ptr as *mut _,
-            DLTENSOR_VERSIONED_NAME.as_ptr(),
-            Some(pycapsule_deleter),
-        )
-    };
-    Ok(unsafe { PyObject::from_owned_ptr(py, capsule) })
-}
-
-/// A generic function to convert a Rust `ndarray::Array` into a Python `PyCapsule`.
-/// This function is not exposed to Python, but is used in tests.
-fn ndarray_to_py_capsule<'py, T, D>(py: Python<'py>, array: Array<T, D>) -> PyResult<PyObject>
-where
-    D: Dimension,
-    T: GetDLPackDataType + 'static, // 'static is needed for the deleter
-{
-    let managed_tensor = ndarray_to_managed_tensor(array);
-    managed_tensor_to_py_capsule(py, managed_tensor)
-}
-
-// Array + other data needed alive inside the DLPackTensor
-pub struct ShapeStrideI64<T> {
-    // This field holds the actual array data.
-    // When an instance of ShapeStrideI64 is dropped,
-    // this array is dropped too.
-    array: T,
-    shape: Vec<i64>,
-    strides: Vec<i64>,
-}
-
-// This is the "deleter" for the DLManagedTensor.
-pub unsafe extern "C" fn shape_strides_i64_box_deleter<T>(
-    tensor: *mut sys::DLManagedTensorVersioned,
-) {
-    // The manager_ctx is a raw pointer to the Box<ShapeStrideI64<T>>.
-    // The reconstructed box goes out of scope at the end of this function,
-    // so ShapeStrideI64 is deallocated by the memory manager's drop, ergo removing
-    // the ndarray::Array it contains.
-    let data = (*tensor).manager_ctx.cast::<ShapeStrideI64<T>>();
-    let boxed = Box::from_raw(data);
-    std::mem::drop(boxed);
 }
 
 /*****************************************************************************/
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::DLPackTensorRef;
-    use ndarray::{arr2, ArrayView2};
+    use super::IntoDLPackPyCapsule;
+    use crate::sys;
+    use ndarray::{arr2, Array, ArrayView2};
     use pyo3::ffi::c_str;
+    use pyo3::prelude::*;
     use pyo3::types::{PyCapsule, PyDict};
 
     macro_rules! test_numpy_to_ndarray_via_dlpack_dtype {
@@ -148,12 +96,11 @@ mod tests {
                     locals.set_item("dlpack", py.import("dlpack")?)?;
                     locals.set_item("dtype", $np_dtype)?;
 
-                    let code = c_str!(
-                        r#"
+                    let code = c_str!("
 arr = np.array([[1, 2, 3], [4, 5, 6]], dtype=dtype)
 dl_obj = dlpack.asdlpack(arr)
 result_capsule = dl_obj.__dlpack__()
-"#
+"
                     );
                     py.run(code, None, Some(&locals))?;
 
@@ -183,19 +130,20 @@ result_capsule = dl_obj.__dlpack__()
             fn $test_name() -> PyResult<()> {
                 pyo3::prepare_freethreaded_python();
                 Python::with_gil(|py| {
-                    let rust_array = arr2(&[
+                    let rust_array: Array<$rust_type, _> = arr2(&[
                         [1 as $rust_type, 2 as $rust_type, 3 as $rust_type],
                         [4 as $rust_type, 5 as $rust_type, 6 as $rust_type],
                     ]);
-                    let py_capsule = ndarray_to_py_capsule(py, rust_array).unwrap();
+
+                    let py_capsule_wrapper = rust_array.into_dlpack_pycapsule()?;
+                    let py_capsule = py_capsule_wrapper.0;
 
                     let locals = PyDict::new(py);
                     locals.set_item("np", py.import("numpy")?)?;
                     locals.set_item("rust_capsule", py_capsule)?;
                     locals.set_item("dtype", $np_dtype)?;
 
-                    let code = c_str!(
-                        r#"
+                    let code = c_str!("
 class DLPackWrapper:
     def __init__(self, capsule):
         self.capsule = capsule
@@ -207,7 +155,7 @@ arr = np.from_dlpack(rust_dlpack_obj)
 expected = np.array([[1, 2, 3], [4, 5, 6]], dtype=dtype)
 assert arr.shape == (2, 3)
 assert np.allclose(arr, expected)
-"#
+"
                     );
                     py.run(code, None, Some(&locals))?;
                     Ok(())
@@ -216,7 +164,6 @@ assert np.allclose(arr, expected)
         };
     }
 
-    // Instantiate the integration tests for various dtypes
     test_numpy_to_ndarray_via_dlpack_dtype!(test_from_numpy_f32, f32, "float32");
     test_ndarray_to_numpy_via_dlpack_dtype!(test_to_numpy_f32, f32, "float32");
 
