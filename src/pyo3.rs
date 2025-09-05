@@ -1,4 +1,4 @@
-use crate::sys;
+use crate::sys::{self, DLManagedTensorVersioned};
 use pyo3::exceptions::PyValueError;
 use pyo3::ffi;
 use pyo3::prelude::*;
@@ -38,47 +38,49 @@ unsafe extern "C" fn pycapsule_deleter(capsule: *mut ffi::PyObject) {
     }
 }
 
-pub struct DLPackPyCapsule(pub Py<PyCapsule>);
-
-pub trait IntoDLPackPyCapsule: Sized {
-    fn into_dlpack_pycapsule(self) -> PyResult<DLPackPyCapsule>;
-}
-
-/// A generic implementation to convert any type that can be converted into a
-/// `DLManagedTensorVersioned` into our local `DLPackPyCapsule`.
-impl<T> IntoDLPackPyCapsule for T
+/// Converts a Rust object that can be represented as a DLManagedTensorVersioned
+/// into a Python `PyCapsule` that follows the DLPack standard.
+///
+/// This function handles the full lifecycle of the tensor data:
+/// 1. It takes ownership of the `array` object.
+/// 2. It converts the object into a heap-allocated `DLManagedTensorVersioned`.
+/// 3. It passes a raw pointer to this struct to a `PyCapsule`.
+/// 4. When the `PyCapsule` is garbage-collected in Python, the provided
+///    `pycapsule_deleter` is called, which safely reclaims the memory on the Rust side.
+pub fn to_pycapsule<T>(array: T) -> PyResult<Py<PyCapsule>>
 where
-    T: TryInto<sys::DLManagedTensorVersioned>,
+    T: TryInto<DLManagedTensorVersioned>,
     T::Error: std::fmt::Display,
 {
-    fn into_dlpack_pycapsule(self) -> PyResult<DLPackPyCapsule> {
-        let managed_tensor = self
-            .try_into()
-            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+    let managed_tensor = array
+        .try_into()
+        .map_err(|e| PyValueError::new_err(e.to_string()))?;
 
-        let managed_tensor_ptr = Box::into_raw(Box::new(managed_tensor));
+    // The DLManagedTensorVersioned needs to live for as long as the PyCapsule exists.
+    // Box::into_raw leaks the Box, transferring ownership from Rust's memory manager
+    // to the PyCapsule's lifecycle.
+    let managed_tensor_ptr = Box::into_raw(Box::new(managed_tensor));
 
-        Python::with_gil(|py| {
-            let capsule = unsafe {
-                Py::from_owned_ptr(
-                    py,
-                    ffi::PyCapsule_New(
-                        managed_tensor_ptr as *mut _,
-                        DLTENSOR_VERSIONED_NAME.as_ptr(),
-                        Some(pycapsule_deleter),
-                    ),
-                )
-            };
-            Ok(DLPackPyCapsule(capsule))
-        })
-    }
+    Python::with_gil(|py| {
+        let capsule = unsafe {
+            Py::from_owned_ptr(
+                py,
+                ffi::PyCapsule_New(
+                    managed_tensor_ptr as *mut _,
+                    DLTENSOR_VERSIONED_NAME.as_ptr(),
+                    Some(pycapsule_deleter),
+                ),
+            )
+        };
+        Ok(capsule)
+    })
 }
+
 
 /*****************************************************************************/
 
 #[cfg(test)]
 mod tests {
-    use super::IntoDLPackPyCapsule;
     use crate::sys;
     use ndarray::{arr2, Array, ArrayView2};
     use pyo3::ffi::c_str;
@@ -96,7 +98,8 @@ mod tests {
                     locals.set_item("dlpack", py.import("dlpack")?)?;
                     locals.set_item("dtype", $np_dtype)?;
 
-                    let code = c_str!("
+                    let code = c_str!(
+                        "
 arr = np.array([[1, 2, 3], [4, 5, 6]], dtype=dtype)
 dl_obj = dlpack.asdlpack(arr)
 result_capsule = dl_obj.__dlpack__()
@@ -135,15 +138,15 @@ result_capsule = dl_obj.__dlpack__()
                         [4 as $rust_type, 5 as $rust_type, 6 as $rust_type],
                     ]);
 
-                    let py_capsule_wrapper = rust_array.into_dlpack_pycapsule()?;
-                    let py_capsule = py_capsule_wrapper.0;
+                    let py_capsule = super::to_pycapsule(rust_array)?;
 
                     let locals = PyDict::new(py);
                     locals.set_item("np", py.import("numpy")?)?;
                     locals.set_item("rust_capsule", py_capsule)?;
                     locals.set_item("dtype", $np_dtype)?;
 
-                    let code = c_str!("
+                    let code = c_str!(
+                        "
 class DLPackWrapper:
     def __init__(self, capsule):
         self.capsule = capsule
