@@ -1,6 +1,8 @@
 use ndarray::ShapeBuilder;
+use ndarray::{Array, Dimension};
 
 use crate::sys;
+use crate::sys::DLManagedTensorVersioned;
 use crate::{DLPackTensorRefMut, DLPackTensorRef};
 use crate::data_types::{CastError, DLPackPointerCast, GetDLPackDataType};
 
@@ -30,7 +32,6 @@ impl From<ndarray::ShapeError> for DLPackNDarrayError {
     }
 }
 
-// Also implement conversion to a PyErr for pyo3 integration
 #[cfg(feature = "pyo3")]
 impl From<DLPackNDarrayError> for PyErr {
     fn from(err: DLPackNDarrayError) -> PyErr {
@@ -263,6 +264,65 @@ impl_dim_for_vec_array!(6);
 impl DimFromVec for ndarray::IxDyn {
     fn dim_from_vec(shape: Vec<usize>) -> Result<Self, ndarray::ShapeError> {
         return Ok(ndarray::Dim(shape));
+    }
+}
+
+
+// Private struct to manage the lifetime of the array and its shape/strides
+struct ManagerContext<T> {
+    _array: T,
+    shape: Vec<i64>,
+    strides: Vec<i64>,
+}
+
+unsafe extern "C" fn deleter_fn<T>(manager: *mut DLManagedTensorVersioned) {
+    // Reconstruct the box and drop it, freeing the memory.
+    let ctx = (*manager).manager_ctx as *mut ManagerContext<T>;
+    let _ = Box::from_raw(ctx);
+}
+
+impl<T, D> TryFrom<Array<T, D>> for DLManagedTensorVersioned
+where
+    D: Dimension,
+    T: GetDLPackDataType + 'static,
+{
+    type Error = DLPackNDarrayError;
+
+    fn try_from(array: Array<T, D>) -> Result<Self, Self::Error> {
+        let shape: Vec<i64> = array.shape().iter().map(|&s| s as i64).collect();
+        let strides: Vec<i64> = array.strides().iter().map(|&s| s as i64).collect();
+
+        let mut ctx = Box::new(ManagerContext {
+            _array: array,
+            shape,
+            strides,
+        });
+
+        let dl_tensor = sys::DLTensor {
+            data: ctx._array.as_ptr() as *mut _,
+            device: sys::DLDevice {
+                device_type: sys::DLDeviceType::kDLCPU,
+                device_id: 0,
+            },
+            ndim: ctx.shape.len() as i32,
+            dtype: T::get_dlpack_data_type(),
+            shape: ctx.shape.as_mut_ptr(),
+            strides: ctx.strides.as_mut_ptr(),
+            byte_offset: 0,
+        };
+
+        let managed_tensor = DLManagedTensorVersioned {
+            version: sys::DLPackVersion {
+                major: sys::DLPACK_MAJOR_VERSION,
+                minor: sys::DLPACK_MINOR_VERSION,
+            },
+            manager_ctx: Box::into_raw(ctx) as *mut _,
+            deleter: Some(deleter_fn::<Array<T, D>>),
+            flags: 0,
+            dl_tensor,
+        };
+
+        Ok(managed_tensor)
     }
 }
 
