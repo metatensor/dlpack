@@ -29,13 +29,6 @@ jobs:
         run: |
           cargo build --verbose
           cargo test --verbose
-      - name: Test NumPy
-        env:
-          SCCACHE_GHA_ENABLED: "true"
-          RUSTC_WRAPPER: "sccache"
-        run: |
-          pip install numpy
-          cd multi-lingual && cargo test --verbose
       - name: Test dlpack interface
         env:
           SCCACHE_GHA_ENABLED: "true"

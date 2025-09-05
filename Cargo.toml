@@ -10,8 +10,3 @@ pyo3 = { version = "0.25.1", optional = true }
 [features]
 ndarray = ["dep:ndarray"]
 pyo3 = ["dep:pyo3"]
-
-
-[workspace]
-relsover = "3"
-members = ["multi-lingual"]
