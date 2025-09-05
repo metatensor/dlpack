@@ -68,7 +68,7 @@ impl_dlpack_pointer_cast!(DLDataTypeCode::kDLFloat, f32, f64,);
 impl_dlpack_pointer_cast!(DLDataTypeCode::kDLBool, bool,);
 
 
-/// Trait to get the DLPack datatype correspondong to a Rust datatype
+/// Trait to get the DLPack datatype corresponding to a Rust datatype
 #[allow(dead_code)]
 pub trait GetDLPackDataType {
     fn get_dlpack_data_type() -> DLDataType;
