@@ -455,4 +455,21 @@ mod tests {
         let expected = arr2(&[[100.0, 2.0, 3.0], [4.0, 5.0, 6.0]]);
         assert_eq!(array_view_mut, expected);
     }
+
+    #[test]
+    fn test_ndarray_to_managed_tensor() {
+        let array = arr2(&[[1i64, 2, 3], [4, 5, 6]]);
+        let managed_tensor: DLManagedTensorVersioned = array.clone().try_into().unwrap();
+
+        let raw = &managed_tensor.dl_tensor;
+        assert_eq!(raw.ndim, 2);
+        assert_eq!(raw.device.device_type, DLDeviceType::kDLCPU);
+        assert_eq!(raw.dtype, i64::get_dlpack_data_type());
+
+        let shape = unsafe { std::slice::from_raw_parts(raw.shape, 2) };
+        assert_eq!(shape, &[2, 3]);
+
+        let strides = unsafe { std::slice::from_raw_parts(raw.strides, 2) };
+        assert_eq!(strides, &[3, 1]);
+    }
 }
