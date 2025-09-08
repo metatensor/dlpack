@@ -6,7 +6,7 @@ use pyo3::types::PyCapsule;
 use std::ffi::CStr;
 
 /*****************************************************************************/
-/*                      ndarray => Python (via PyO3)                         */
+/*                      DLPackTensor => Python (via PyO3)                    */
 /*****************************************************************************/
 
 // The name for the PyCapsule, as per the DLPack standard.
