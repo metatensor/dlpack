@@ -250,3 +250,5 @@ impl<'a> DLPackTensorRefMut<'a> {
 
 #[cfg(feature = "ndarray")]
 pub mod ndarray;
+#[cfg(feature = "pyo3")]
+pub mod pyo3;

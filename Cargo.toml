@@ -4,8 +4,9 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-ndarray = {version = "0.16", optional = true}
+ndarray = { version = "0.16", optional = true }
+pyo3 = { version = "0.25.1", optional = true }
 
-
-[workspace]
-members = [".", "multi-languages"]
+[features]
+ndarray = ["dep:ndarray"]
+pyo3 = ["dep:pyo3"]

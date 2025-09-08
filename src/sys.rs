@@ -4,21 +4,25 @@
 //! translated from `dlpack.h` header at version 1.0; and contains types
 //! suitable for use in C FFI.
 
-
 /// The current major version of dlpack
 pub const DLPACK_MAJOR_VERSION: u32 = 1;
 /// The current minor version of dlpack
-pub const DLPACK_MINOR_VERSION: u32 = 0;
-
+pub const DLPACK_MINOR_VERSION: u32 = 1;
 
 /// bit mask to indicate that the tensor is read only.
-pub const DLPACK_FLAG_BITMASK_READ_ONLY: u64 = 0b00000000000000000000000000000001;
+pub const DLPACK_FLAG_BITMASK_READ_ONLY: u64 = 1 << 0;
 
 /// bit mask to indicate that the tensor is a copy made by the producer.
 ///
 /// If set, the tensor is considered solely owned throughout its lifetime by the
 /// consumer, until the producer-provided deleter is invoked.
-pub const DLPACK_FLAG_BITMASK_IS_COPIED: u64 = 0b00000000000000000000000000000010;
+pub const DLPACK_FLAG_BITMASK_IS_COPIED: u64 = 1 << 1;
+
+/// bit mask to indicate that whether a sub-byte type is packed or padded.
+///
+/// The default for sub-byte types (ex: fp4/fp6) is assumed packed. This flag can
+/// be set by the producer to signal that a tensor of sub-byte type is padded.
+pub const DLPACK_FLAG_BITMASK_IS_SUBBYTE_TYPE_PADDED: u64 = 1 << 2;
 
 /// The DLPack version.
 ///
@@ -131,21 +135,43 @@ impl std::fmt::Display for DLDevice {
 #[non_exhaustive]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DLDataTypeCode {
-  /// signed integer
-  kDLInt = 0,
-  /// unsigned integer
-  kDLUInt = 1,
-  /// IEEE floating point
-  kDLFloat = 2,
-  /// Opaque handle type, reserved for testing purposes. Frameworks need to
-  /// agree on the handle data type for the exchange to be well-defined.
-  kDLOpaqueHandle = 3,
-  /// bfloat16
-  kDLBfloat = 4,
-  /// complex number (C/C++/Python layout: compact struct per complex number)
-  kDLComplex = 5,
-  /// boolean
-  kDLBool = 6,
+    /// signed integer
+    kDLInt = 0,
+    /// unsigned integer
+    kDLUInt = 1,
+    /// IEEE floating point
+    kDLFloat = 2,
+    /// Opaque handle type, reserved for testing purposes. Frameworks need to
+    /// agree on the handle data type for the exchange to be well-defined.
+    kDLOpaqueHandle = 3,
+    /// bfloat16
+    kDLBfloat = 4,
+    /// complex number (C/C++/Python layout: compact struct per complex number)
+    kDLComplex = 5,
+    /// boolean
+    kDLBool = 6,
+    /// FP8 data types
+    kDLFloat8_e3m4 = 7,
+    kDLFloat8_e4m3 = 8,
+    kDLFloat8_e4m3b11fnuz = 9,
+    kDLFloat8_e4m3fn = 10,
+    kDLFloat8_e4m3fnuz = 11,
+    kDLFloat8_e5m2 = 12,
+    kDLFloat8_e5m2fnuz = 13,
+    kDLFloat8_e8m0fnu = 14,
+    /// FP6 data types
+    ///
+    /// Setting bits != 6 is currently unspecified, and the producer must ensure it is set
+    /// while the consumer must stop importing if the value is unexpected.
+    ///
+    kDLFloat6_e2m3fn = 15,
+    kDLFloat6_e3m2fn = 16,
+    /// FP4 data types
+    ///
+    /// Setting bits != 4 is currently unspecified, and the producer must ensure it is set
+    /// while the consumer must stop importing if the value is unexpected.
+    ///
+    kDLFloat4_e2m1fn = 17,
 }
 
 /// The data type the tensor can hold. The data type is assumed to follow the
@@ -186,6 +212,17 @@ impl std::fmt::Display for DLDataType {
             DLDataTypeCode::kDLBfloat => "bfloat",
             DLDataTypeCode::kDLComplex => "complex",
             DLDataTypeCode::kDLBool => "b",
+            DLDataTypeCode::kDLFloat8_e3m4 => "f8_e3m4",
+            DLDataTypeCode::kDLFloat8_e4m3 => "f8_e4m3",
+            DLDataTypeCode::kDLFloat8_e4m3b11fnuz => "f8_e4m3b11fnuz",
+            DLDataTypeCode::kDLFloat8_e4m3fn => "f8_e4m3fn",
+            DLDataTypeCode::kDLFloat8_e4m3fnuz => "f8_e4m3fnuz",
+            DLDataTypeCode::kDLFloat8_e5m2 => "f8_e5m2",
+            DLDataTypeCode::kDLFloat8_e5m2fnuz => "f8_e5m2fnuz",
+            DLDataTypeCode::kDLFloat8_e8m0fnu => "f8_e8m0fnu",
+            DLDataTypeCode::kDLFloat6_e2m3fn => "f8_e2m3fn",
+            DLDataTypeCode::kDLFloat6_e3m2fn => "f8_e3m2fn",
+            DLDataTypeCode::kDLFloat4_e2m1fn => "f8_e2m1fn",
         };
 
         if self.lanes == 1 {
