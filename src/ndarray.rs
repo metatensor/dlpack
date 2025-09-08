@@ -128,6 +128,12 @@ impl<'a, T, D> TryFrom<DLPackTensorRefMut<'a>> for ndarray::ArrayViewMut<'a, T, 
     }
 }
 
+/// This implementation provides a conversion from a DLPack
+/// `DLManagedTensorVersioned` to an `ndarray::Array`.
+///
+/// **Note:** This conversion makes a copy of the underlying tensor data. The
+/// original DLPack tensor memory is released after the copy is complete.
+///
 impl<T, D> TryFrom<DLManagedTensorVersioned> for Array<T, D>
 where
     D: Dimension + DimFromVec + 'static,
