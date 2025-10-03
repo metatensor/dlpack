@@ -79,7 +79,7 @@ where
 
 /*****************************************************************************/
 
-#[cfg(test)]
+#[cfg(all(test, feature = "ndarray"))]
 mod tests {
     use crate::sys;
     use ndarray::{arr2, Array, ArrayView2};
