@@ -85,8 +85,19 @@ impl DLPackTensor {
     /// The `DLManagedTensorVersioned` should have a valid `deleter` that can
     /// be called from Rust, or have the deleter set to `None`.
     pub unsafe fn from_ptr(tensor: NonNull<sys::DLManagedTensorVersioned>) -> DLPackTensor {
+        if tensor.as_ref().version.major != sys::DLPACK_MAJOR_VERSION {
+            // from the spec, we need to call the deleter here (and it is the
+            // only thing we can do)
+            if let Some(deleter) = tensor.as_ref().deleter {
+                deleter(tensor.as_ptr());
+            }
+            panic!(
+                "Incompatible DLPack version, got {}, but this code only supports version {}",
+                tensor.as_ref().version.major, sys::DLPACK_MAJOR_VERSION
+            );
+        }
         return DLPackTensor{
-            raw: tensor,
+            raw: tensor
         };
     }
 
