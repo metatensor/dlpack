@@ -1,88 +1,261 @@
 use crate::sys::{self, DLManagedTensorVersioned};
-use pyo3::exceptions::PyValueError;
-use pyo3::ffi;
+use crate::{DLPackTensor, DLPackTensorRef};
+
+use pyo3::exceptions::{PyBufferError, PyValueError};
 use pyo3::prelude::*;
-use pyo3::types::PyCapsule;
+use pyo3::types::{PyCapsule, PyTuple};
 use std::ffi::CStr;
+use std::ptr::NonNull;
 
 /*****************************************************************************/
 /*                      DLPackTensor => Python (via PyO3)                    */
 /*****************************************************************************/
 
 // The name for the PyCapsule, as per the DLPack standard.
-const DLTENSOR_VERSIONED_NAME: &CStr =
-    unsafe { CStr::from_bytes_with_nul_unchecked(b"dltensor_versioned\0") };
+const DLTENSOR_VERSIONED_NAME: &CStr = pyo3::ffi::c_str!("dltensor_versioned");
+const USED_DLTENSOR_VERSIONED_NAME: &CStr = pyo3::ffi::c_str!("used_dltensor_versioned");
+const DLTENSOR_NAME: &CStr = pyo3::ffi::c_str!("dltensor");
 
-// This deleter is called by the Python garbage collector when the PyCapsule's
-// reference count goes to zero. It reclaims the Box'd DLManagedTensorVersioned
-// and calls its *original* deleter, which is responsible for freeing the
-// underlying array data.
-unsafe extern "C" fn pycapsule_deleter(capsule: *mut ffi::PyObject) {
-    if ffi::PyCapsule_IsValid(capsule, DLTENSOR_VERSIONED_NAME.as_ptr()) == 0 {
-        return;
-    }
+/// Python object implementing the dlpack protocol.
+#[pyclass]
+pub struct PyDLPack {
+    capsule: Py<PyCapsule>,
+    is_versioned: bool,
+}
 
-    let managed_tensor_ptr = ffi::PyCapsule_GetPointer(capsule, DLTENSOR_VERSIONED_NAME.as_ptr())
-        as *mut sys::DLManagedTensorVersioned;
+impl PyDLPack {
+    fn as_dltensor<'py>(&self, py: Python<'py>) -> PyResult<&'py sys::DLTensor> {
+        if self.is_versioned {
+            let versioned_tensor = self.capsule.bind(py).pointer() as *const sys::DLManagedTensorVersioned;
+            if versioned_tensor.is_null() {
+                return Err(PyErr::new::<PyValueError, _>(
+                    "PyCapsule pointer is null",
+                ));
+            }
 
-    if managed_tensor_ptr.is_null() {
-        return;
-    }
+            unsafe {
+                return Ok(&(*versioned_tensor).dl_tensor);
+            }
+        } else {
+            let tensor = self.capsule.bind(py).pointer() as *const sys::DLManagedTensor;
+            if tensor.is_null() {
+                return Err(PyErr::new::<PyValueError, _>(
+                    "PyCapsule pointer is null",
+                ));
+            }
 
-    // Reclaim ownership of the Box<DLManagedTensorVersioned>.
-    let mut boxed_managed_tensor = Box::from_raw(managed_tensor_ptr);
-
-    // Call the original deleter function for the underlying data (e.g., the ndarray).
-    if let Some(deleter) = boxed_managed_tensor.deleter {
-        deleter(boxed_managed_tensor.as_mut());
+            unsafe {
+                return Ok(&(*tensor).dl_tensor);
+            }
+        }
     }
 }
 
-/// Converts a Rust object that can be represented as a DLManagedTensorVersioned
-/// into a Python `PyCapsule` that follows the DLPack standard.
-///
-/// This function handles the full lifecycle of the tensor data:
-/// 1. It takes ownership of the `array` object.
-/// 2. It converts the object into a heap-allocated `DLManagedTensorVersioned`.
-/// 3. It passes a raw pointer to this struct to a `PyCapsule`.
-/// 4. When the `PyCapsule` is garbage-collected in Python, the provided
-///    `pycapsule_deleter` is called, which safely reclaims the memory on the Rust side.
-pub fn to_pycapsule<T>(array: T) -> PyResult<Py<PyCapsule>>
-where
-    T: TryInto<DLManagedTensorVersioned>,
-    T::Error: std::fmt::Display,
-{
-    let managed_tensor = array
-        .try_into()
-        .map_err(|e| PyValueError::new_err(e.to_string()))?;
+#[allow(unused_variables)]
+#[pymethods]
+impl PyDLPack {
+    #[new]
+    fn new<'py>(py: Python<'py>, capsule: Py<PyCapsule>) -> PyResult<Self> {
+        let name = capsule.bind(py).name()?;
 
-    // The DLManagedTensorVersioned needs to live for as long as the PyCapsule exists.
-    // Box::into_raw leaks the Box, transferring ownership from Rust's memory manager
-    // to the PyCapsule's lifecycle.
-    let managed_tensor_ptr = Box::into_raw(Box::new(managed_tensor));
-
-    Python::with_gil(|py| {
-        let capsule = unsafe {
-            Py::from_owned_ptr(
-                py,
-                ffi::PyCapsule_New(
-                    managed_tensor_ptr as *mut _,
-                    DLTENSOR_VERSIONED_NAME.as_ptr(),
-                    Some(pycapsule_deleter),
-                ),
-            )
+        let is_versioned = if name == Some(DLTENSOR_NAME) {
+            false
+        } else if name == Some(DLTENSOR_VERSIONED_NAME) {
+            true
+        } else if name.is_none() {
+            return Err(PyErr::new::<PyValueError, _>(
+                "PyCapsule name is not set",
+            ));
+        } else {
+            return Err(PyErr::new::<PyValueError, _>(
+                format!("invalid capsule name: expected 'dltensor' or 'dltensor_versioned', got '{:?}'", name)
+            ));
         };
-        Ok(capsule)
-    })
+
+        Ok(PyDLPack{ is_versioned, capsule })
+    }
+
+    /// Get the underlying PyCapsule containing the DLPack tensor.
+    ///
+    /// https://data-apis.org/array-api/latest/API_specification/generated/array_api.array.__dlpack__.html
+    #[pyo3(signature=(*, stream=None, max_version=None, dl_device=None, copy=None))]
+    pub fn __dlpack__<'py>(
+        &self,
+        py: Python<'py>,
+        stream: Option<Bound<'py, PyAny>>,
+        max_version: Option<Bound<'py, PyAny>>,
+        dl_device: Option<Bound<'py, PyAny>>,
+        copy: Option<Bound<'py, PyAny>>,
+    ) -> PyResult<Py<PyCapsule>> {
+        if stream.is_some() {
+            return Err(PyErr::new::<PyValueError, _>("only `stream=None` is supported"));
+        }
+
+        // we can ignore `max_version`, the consumer is supposed to check it again
+        // anyway
+
+        if let Some(device) = dl_device {
+            if device.ne(self.__dlpack_device__(py)?)? {
+                return Err(PyErr::new::<PyBufferError, _>("unsupported `dl_device`"));
+            }
+        }
+
+        if copy.is_some() {
+            return Err(PyErr::new::<PyValueError, _>("only `copy=None` is supported"));
+        }
+
+        let capsule = self.capsule.clone_ref(py);
+        let name = capsule.bind(py).name()?.expect("capsule name should be set").to_str().expect("name should be utf8");
+        if name.starts_with("used_") {
+            return Err(PyErr::new::<PyValueError, _>("this caspsule has already been used"));
+        }
+
+        return Ok(capsule);
+    }
+
+    /// Implementation of `__dlpack_device__`, returning a tuple with `(device_type, device_id)`.
+    /// https://data-apis.org/array-api/latest/API_specification/generated/array_api.array.__dlpack_device__.html
+    pub fn __dlpack_device__<'py>(&self, py: Python<'py>) -> PyResult<Py<PyTuple>> {
+        let tensor = self.as_dltensor(py)?;
+        let device = tensor.device;
+
+        let tuple = PyTuple::new(py, [device.device_type as i32, device.device_id])?;
+        return Ok(tuple.unbind());
+    }
+}
+
+impl<'py> TryFrom<&Bound<'py, PyCapsule>> for DLPackTensor {
+    type Error = PyErr;
+
+    fn try_from(capsule: &Bound<'py, PyCapsule>) -> Result<Self, Self::Error> {
+        let name = capsule.name()?;
+
+        let is_versioned = if name == Some(DLTENSOR_NAME) {
+            false
+        } else if name == Some(DLTENSOR_VERSIONED_NAME) {
+            true
+        } else if name.is_none() {
+            return Err(PyErr::new::<PyValueError, _>(
+                "PyCapsule name is not set",
+            ));
+        } else {
+            return Err(PyErr::new::<PyValueError, _>(
+                format!("invalid capsule name: expected 'dltensor' or 'dltensor_versioned', got '{:?}'", name)
+            ));
+        };
+
+        if !is_versioned {
+            return Err(PyErr::new::<PyValueError, _>(
+                format!("invalid capsule, we only support 'dltensor_versioned' but got '{:?}'", name)
+            ));
+        }
+
+        let pointer = capsule.pointer().cast::<DLManagedTensorVersioned>();
+        if let Some(pointer) = NonNull::new(pointer) {
+            unsafe {
+                // set the name to "used_dltensor_versioned" so that
+                // the capsule destructor does not free the tensor
+                let status = pyo3::ffi::PyCapsule_SetName(
+                    capsule.as_ptr(), USED_DLTENSOR_VERSIONED_NAME.as_ptr()
+                );
+                if status != 0 {
+                    return Err(PyErr::fetch(capsule.py()));
+                }
+
+                return Ok(DLPackTensor::from_ptr(pointer));
+            }
+        } else {
+            return Err(PyErr::new::<PyValueError, _>(
+                "invalid capsule, the pointer was null"
+            ));
+        }
+    }
+}
+
+impl TryFrom<Py<PyCapsule>> for DLPackTensor {
+    type Error = PyErr;
+
+    fn try_from(value: Py<PyCapsule>) -> Result<Self, Self::Error> {
+        Python::attach(|py| {
+            let capsule = value.bind(py);
+            DLPackTensor::try_from(capsule)
+        })
+    }
+}
+
+impl<'py> TryFrom<Bound<'py, PyCapsule>> for DLPackTensorRef<'py> {
+    type Error = PyErr;
+
+    fn try_from(value: Bound<'py, PyCapsule>) -> Result<Self, Self::Error> {
+        Python::attach(|py| {
+            let wrapper = PyDLPack::new(py, value.unbind())?;
+            let dltensor = wrapper.as_dltensor(py)?;
+
+            // SAFETY: The lifetime of the returned reference is tied to the
+            // lifetime GIL lifetime.
+            let tensor = unsafe {
+                DLPackTensorRef::from_raw(dltensor.clone())
+            };
+
+            Ok(tensor)
+        })
+    }
+}
+
+unsafe extern "C" fn rust_capsule_deleter(object: *mut pyo3::ffi::PyObject) {
+    if pyo3::ffi::PyCapsule_IsValid(object, USED_DLTENSOR_VERSIONED_NAME.as_ptr()) == 1 {
+        // All good, the data was already transfered
+        return;
+    }
+
+    if !pyo3::ffi::PyCapsule_IsValid(object, DLTENSOR_VERSIONED_NAME.as_ptr()) == 1 {
+        // we got a bad capsule, send a warning
+        pyo3::ffi::PyErr_WriteUnraisable(object);
+        return;
+    }
+
+    let ptr = pyo3::ffi::PyCapsule_GetPointer(object, DLTENSOR_VERSIONED_NAME.as_ptr());
+
+    // PyCapsule_IsValid checks the the pointer is not null
+    let tensor = NonNull::new(ptr.cast::<DLManagedTensorVersioned>())
+        .expect("the capsule should be non-null");
+    std::mem::drop(DLPackTensor::from_ptr(tensor));
+}
+
+impl TryFrom<DLPackTensor> for PyDLPack {
+    type Error = PyErr;
+
+    fn try_from(value: DLPackTensor) -> Result<Self, Self::Error> {
+        Python::attach(|py| {
+            // SAFETY: we are holding the GIL here
+            let capsule = unsafe {
+                pyo3::ffi::PyCapsule_New(
+                    value.raw.as_ptr().cast(),
+                    DLTENSOR_VERSIONED_NAME.as_ptr(),
+                    Some(rust_capsule_deleter),
+                )
+            };
+            let capsule = unsafe {
+                Bound::from_owned_ptr_or_err(py, capsule)?.cast_into_unchecked()
+            };
+
+            // do not run drop on the Rust side, the capsule now owns the tensor
+            std::mem::forget(value);
+            PyDLPack::new(py, capsule.unbind())
+        })
+    }
 }
 
 
 /*****************************************************************************/
 
-#[cfg(all(test, feature = "ndarray"))]
+#[cfg(test)]
 mod tests {
-    use crate::sys;
-    use ndarray::{arr2, Array, ArrayView2};
+    use crate::{DLPackTensor, DLPackTensorRef};
+
+    use super::PyDLPack;
+
+    use ndarray::{Array, ArrayView2};
     use pyo3::ffi::c_str;
     use pyo3::prelude::*;
     use pyo3::types::{PyCapsule, PyDict};
@@ -91,18 +264,16 @@ mod tests {
         ($test_name:ident, $rust_type:ty, $np_dtype:expr) => {
             #[test]
             fn $test_name() -> PyResult<()> {
-                pyo3::prepare_freethreaded_python();
-                Python::with_gil(|py| {
+                Python::initialize();
+                Python::attach(|py| {
                     let locals = PyDict::new(py);
                     locals.set_item("np", py.import("numpy")?)?;
-                    locals.set_item("dlpack", py.import("dlpack")?)?;
                     locals.set_item("dtype", $np_dtype)?;
 
                     let code = c_str!(
                         "
-arr = np.array([[1, 2, 3], [4, 5, 6]], dtype=dtype)
-dl_obj = dlpack.asdlpack(arr)
-result_capsule = dl_obj.__dlpack__()
+array = np.array([[1, 2, 3], [4, 5, 6]], dtype=dtype)
+result_capsule = array.__dlpack__()
 "
                     );
                     py.run(code, None, Some(&locals))?;
@@ -110,12 +281,10 @@ result_capsule = dl_obj.__dlpack__()
                     let result = locals.get_item("result_capsule")?.unwrap();
                     let capsule: Bound<PyCapsule> = result.extract()?;
 
-                    let dl_tensor_ptr = capsule.pointer() as *const sys::DLTensor;
-                    let dlpack_ref =
-                        unsafe { crate::DLPackTensorRef::from_raw((*dl_tensor_ptr).clone()) };
+                    let dlpack_ref = DLPackTensorRef::try_from(capsule)?;
                     let array = ArrayView2::<$rust_type>::try_from(dlpack_ref).unwrap();
 
-                    let expected = arr2(&[
+                    let expected = ndarray::arr2(&[
                         [1 as $rust_type, 2 as $rust_type, 3 as $rust_type],
                         [4 as $rust_type, 5 as $rust_type, 6 as $rust_type],
                     ]);
@@ -131,33 +300,27 @@ result_capsule = dl_obj.__dlpack__()
         ($test_name:ident, $rust_type:ty, $np_dtype:expr) => {
             #[test]
             fn $test_name() -> PyResult<()> {
-                pyo3::prepare_freethreaded_python();
-                Python::with_gil(|py| {
-                    let rust_array: Array<$rust_type, _> = arr2(&[
+                Python::initialize();
+                Python::attach(|py| {
+                    let rust_array: Array<$rust_type, _> = ndarray::arr2(&[
                         [1 as $rust_type, 2 as $rust_type, 3 as $rust_type],
                         [4 as $rust_type, 5 as $rust_type, 6 as $rust_type],
                     ]);
 
-                    let py_capsule = super::to_pycapsule(rust_array)?;
+                    let dl_tensor = DLPackTensor::try_from(rust_array).unwrap();
+                    let tensor = PyDLPack::try_from(dl_tensor).unwrap();
 
                     let locals = PyDict::new(py);
                     locals.set_item("np", py.import("numpy")?)?;
-                    locals.set_item("rust_capsule", py_capsule)?;
+                    locals.set_item("tensor", tensor)?;
                     locals.set_item("dtype", $np_dtype)?;
 
                     let code = c_str!(
                         "
-class DLPackWrapper:
-    def __init__(self, capsule):
-        self.capsule = capsule
-    def __dlpack__(self, stream=None):
-        return self.capsule
-
-rust_dlpack_obj = DLPackWrapper(rust_capsule)
-arr = np.from_dlpack(rust_dlpack_obj)
+array = np.from_dlpack(tensor)
 expected = np.array([[1, 2, 3], [4, 5, 6]], dtype=dtype)
-assert arr.shape == (2, 3)
-assert np.allclose(arr, expected)
+assert array.shape == (2, 3)
+assert np.allclose(array, expected)
 "
                     );
                     py.run(code, None, Some(&locals))?;

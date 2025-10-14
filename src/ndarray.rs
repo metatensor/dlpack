@@ -1,7 +1,7 @@
 use ndarray::{Array, Dimension, ShapeBuilder};
 
 use crate::data_types::{CastError, DLPackPointerCast, GetDLPackDataType};
-use crate::sys::{self, DLManagedTensorVersioned};
+use crate::sys;
 use crate::{DLPackTensor, DLPackTensorRef, DLPackTensorRefMut};
 
 #[cfg(feature = "pyo3")]
@@ -128,23 +128,21 @@ impl<'a, T, D> TryFrom<DLPackTensorRefMut<'a>> for ndarray::ArrayViewMut<'a, T, 
     }
 }
 
-/// This implementation provides a conversion from a DLPack
-/// `DLManagedTensorVersioned` to an `ndarray::Array`.
+/// This implementation provides a conversion from a DLPack `DLPackTensor` to an
+/// `ndarray::Array`.
 ///
 /// **Note:** This conversion makes a copy of the underlying tensor data. The
 /// original DLPack tensor memory is released after the copy is complete.
 ///
-impl<T, D> TryFrom<DLManagedTensorVersioned> for Array<T, D>
+impl<T, D> TryFrom<DLPackTensor> for Array<T, D>
 where
     D: Dimension + DimFromVec + 'static,
     T: DLPackPointerCast + Clone + 'static,
 {
     type Error = DLPackNDarrayError;
 
-    fn try_from(value: DLManagedTensorVersioned) -> Result<Self, Self::Error> {
-        // DLPackTensor will call the deleter on drop
-        let dl_tensor = unsafe { DLPackTensor::from_raw(value) };
-        let tensor_view = dl_tensor.as_ref();
+    fn try_from(tensor: DLPackTensor) -> Result<Self, Self::Error> {
+        let tensor_view = tensor.as_ref();
         let array_view: ndarray::ArrayView<T, D> = tensor_view.try_into()?;
         Ok(array_view.to_owned())
     }
@@ -293,13 +291,13 @@ struct ManagerContext<T> {
     strides: Vec<i64>,
 }
 
-unsafe extern "C" fn deleter_fn<T>(manager: *mut DLManagedTensorVersioned) {
+unsafe extern "C" fn deleter_fn<T>(manager: *mut sys::DLManagedTensorVersioned) {
     // Reconstruct the box and drop it, freeing the memory.
     let ctx = (*manager).manager_ctx as *mut ManagerContext<T>;
     let _ = Box::from_raw(ctx);
 }
 
-impl<T, D> TryFrom<Array<T, D>> for DLManagedTensorVersioned
+impl<T, D> TryFrom<Array<T, D>> for DLPackTensor
 where
     D: Dimension,
     T: GetDLPackDataType + 'static,
@@ -329,7 +327,7 @@ where
             byte_offset: 0,
         };
 
-        let managed_tensor = DLManagedTensorVersioned {
+        let managed_tensor = sys::DLManagedTensorVersioned {
             version: sys::DLPackVersion {
                 major: sys::DLPACK_MAJOR_VERSION,
                 minor: sys::DLPACK_MINOR_VERSION,
@@ -340,7 +338,9 @@ where
             dl_tensor,
         };
 
-        Ok(managed_tensor)
+        unsafe {
+            Ok(DLPackTensor::from_raw(managed_tensor))
+        }
     }
 }
 
@@ -437,7 +437,7 @@ mod tests {
         assert_eq!(raw.device.device_type, DLDeviceType::kDLCPU);
         assert_eq!(raw.dtype, i64::get_dlpack_data_type());
         assert_eq!(raw.data as *const i64, array.as_ptr());
-        
+
         let shape = unsafe { std::slice::from_raw_parts(raw.shape, 2) };
         assert_eq!(shape, &[2, 3]);
 
@@ -478,9 +478,11 @@ mod tests {
     fn test_ndarray_to_managed_tensor() {
         let array = arr2(&[[1i64, 2, 3], [4, 5, 6]]);
         // The original array is moved into the manager.
-        let managed_tensor: DLManagedTensorVersioned = array.try_into().unwrap();
+        let tensor: DLPackTensor = array.try_into().unwrap();
 
-        let raw = &managed_tensor.dl_tensor;
+        let raw = unsafe {
+            &tensor.raw.as_ref().dl_tensor
+        };
         assert_eq!(raw.ndim, 2);
         assert_eq!(raw.device.device_type, DLDeviceType::kDLCPU);
         assert_eq!(raw.dtype, i64::get_dlpack_data_type());
@@ -490,28 +492,20 @@ mod tests {
 
         let strides = unsafe { std::slice::from_raw_parts(raw.strides, 2) };
         assert_eq!(strides, &[3, 1]);
-        
+
         // To check correctness, we can create a view from the managed tensor's data.
         let view = unsafe {
             let tensor_ref = DLPackTensorRef::from_raw(raw.clone());
             ndarray::ArrayView2::<i64>::try_from(tensor_ref).unwrap()
         };
         assert_eq!(view, arr2(&[[1, 2, 3], [4, 5, 6]]));
-
-        // Manually call the deleter to prevent a memory leak in the test.
-        if let Some(deleter) = managed_tensor.deleter {
-            let mut mt = std::mem::ManuallyDrop::new(managed_tensor);
-            unsafe {
-                deleter(&mut *mt);
-            }
-        }
     }
 
     #[test]
     fn test_roundtrip_conversion() {
         let original_array = arr2(&[[1.0f32, 2.0, 3.0], [4.0, 5.0, 6.0]]);
-        let managed_tensor: DLManagedTensorVersioned = original_array.clone().try_into().unwrap();
-        let final_array: Array<f32, _> = managed_tensor.try_into().unwrap();
+        let tensor: DLPackTensor = original_array.clone().try_into().unwrap();
+        let final_array: Array<f32, _> = tensor.try_into().unwrap();
 
         assert_eq!(original_array, final_array);
     }
