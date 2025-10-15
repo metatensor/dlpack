@@ -1,3 +1,40 @@
+//! Conversion between DLPack and ndarray, this module requires the `ndarray`
+//! feature to be enabled.
+//!
+//! The following conversions are supported:
+//!
+//! - `DLPackTensor` => `ndarray::Array` (makes a copy of the data)
+//! - `DLPackTensorRef` => `ndarray::ArrayView`
+//! - `DLPackTensorRefMut` => `ndarray::ArrayViewMut`
+//! - `ndarray::Array` => `DLPackTensor`
+//! - `&ndarray::Array` => `DLPackTensorRef`
+//! - `&mut ndarray::Array` => `DLPackTensorRefMut`
+//! - `ndarray::ArrayView` => `DLPackTensorRef`
+//! - `ndarray::ArrayViewMut` => `DLPackTensorRefMut`
+//!
+//! # Examples
+//!
+//! ```no_run
+//! use dlpack::{DLPackTensor, DLPackTensorRef};
+//! # fn get_tensor_from_somewhere() -> DLPackTensor { unimplemented!() }
+//!
+//! let tensor: DLPackTensor = get_tensor_from_somewhere();
+//!
+//! // makes a copy of the data
+//! let array: ndarray::ArrayD<f32> = tensor.try_into().unwrap();
+//!
+//! // no copy, share data with the original tensor
+//! let tensor: DLPackTensor = get_tensor_from_somewhere();
+//! let tensor_ref: DLPackTensorRef = tensor.as_ref();
+//! let reference: ndarray::ArrayView2<f32> = tensor_ref.try_into().unwrap();
+//!
+//! // convert an ndarray array into a DLPack tensor
+//! let array = ndarray::Array::from_elem((2, 3), 1.0f32);
+//! let tensor: DLPackTensor = array.clone().try_into().unwrap();
+//!
+//! let tensor_ref: DLPackTensorRef = (&array).try_into().unwrap();
+//! ```
+
 use ndarray::{Array, Dimension, ShapeBuilder};
 
 use crate::data_types::{CastError, DLPackPointerCast, GetDLPackDataType};
@@ -247,7 +284,7 @@ impl<'a, T, D> TryFrom<&'a mut ndarray::Array<T, D>> for DLPackTensorRefMut<'a> 
     }
 }
 
-/// Internal trait that will convert a Vec<usize> into one of ndarray's Dim
+/// Internal trait that will convert a `Vec<usize>` into one of ndarray's Dim
 /// type.
 pub trait DimFromVec where Self: ndarray::Dimension {
     fn dim_from_vec(vec: Vec<usize>) -> Result<Self, ndarray::ShapeError>;

@@ -1,3 +1,62 @@
+//! Convertions between DLPack tensors and Python objects using PyO3. This
+//! module requires the `pyo3` feature to be enabled.
+//!
+//! This module provides the `PyDLPack` class, which implements the Python
+//! DLPack protocol and can be used with any class offering a `from_dlpack`
+//! function.
+//!
+//! The following conversions are supported:
+//!
+//! - `DLPackTensor` => `PyDLPack`: transfers ownership of the tensor from Rust
+//!   to Python.
+//! - `Py<PyCapsule>` and `Bound<'py, PyCapsule>` => `DLPackTensor`: transfers
+//!   ownership of the tensor to Rust. The tensor is stored inside a PyCapsule,
+//!   as returned by the `__dlpack__` method of a compatible Python object. See
+//!   also
+//!   <https://data-apis.org/array-api/latest/API_specification/generated/array_api.array.__dlpack__.html>.
+//! - `Bound<'py, PyCapsule>` => `DLPackTensorRef`: get a read-only view of the
+//!   tensor obtained from Python, without transferring ownership.
+//!
+//! # Examples
+//!
+//! ```
+//! use pyo3::prelude::*;
+//! use pyo3::types::IntoPyDict;
+//! use pyo3::ffi::c_str;
+//! use pyo3::types::PyCapsule;
+//!
+//! use dlpack::{DLPackTensor, DLPackTensorRef};
+//!
+//! Python::initialize();
+//!
+//! // pass data from rust to Python
+//! let array = ndarray::arr2(&[[1.0f32, 2.0, 3.0], [4.0, 5.0, 6.0]]);
+//! let dlpack_tensor = DLPackTensor::try_from(array).unwrap();
+//! let py_tensor = dlpack::pyo3::PyDLPack::try_from(dlpack_tensor).unwrap();
+//!
+//! Python::attach(|py| {
+//!     let locals = [("np", py.import("numpy").unwrap())].into_py_dict(py).unwrap();
+//!     locals.set_item("tensor", py_tensor).unwrap();
+//!     py.run(c_str!("
+//! array = np.from_dlpack(tensor)
+//! expected = np.array([[1, 2, 3], [4, 5, 6]], dtype=np.float32)
+//! assert np.array_equal(array, expected)"), None, Some(&locals)).unwrap();
+//! });
+//!
+//! // pass data from Python to Rust
+//! Python::attach(|py| {
+//!     let locals = [("np", py.import("numpy").unwrap())].into_py_dict(py).unwrap();
+//!     py.run(c_str!("
+//! array = np.array([[1, 2, 3], [4, 5, 6]], dtype=np.float64)
+//! capsule = array.__dlpack__()"), None, Some(&locals)).unwrap();
+//!     let capsule = locals.get_item("capsule").unwrap().unwrap().extract::<Bound<PyCapsule>>().unwrap();
+//!     let dlpack_ref = DLPackTensorRef::try_from(capsule).unwrap();
+//!     let array = ndarray::ArrayView2::<f64>::try_from(dlpack_ref).unwrap();
+//!
+//!     assert_eq!(array, ndarray::arr2(&[[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]));
+//! });
+//! ```
+
 use crate::sys::{self, DLManagedTensorVersioned};
 use crate::{DLPackTensor, DLPackTensorRef};
 
@@ -77,7 +136,7 @@ impl PyDLPack {
 
     /// Get the underlying PyCapsule containing the DLPack tensor.
     ///
-    /// https://data-apis.org/array-api/latest/API_specification/generated/array_api.array.__dlpack__.html
+    /// <https://data-apis.org/array-api/latest/API_specification/generated/array_api.array.__dlpack__.html>
     #[pyo3(signature=(*, stream=None, max_version=None, dl_device=None, copy=None))]
     pub fn __dlpack__<'py>(
         &self,
@@ -114,7 +173,7 @@ impl PyDLPack {
     }
 
     /// Implementation of `__dlpack_device__`, returning a tuple with `(device_type, device_id)`.
-    /// https://data-apis.org/array-api/latest/API_specification/generated/array_api.array.__dlpack_device__.html
+    /// <https://data-apis.org/array-api/latest/API_specification/generated/array_api.array.__dlpack_device__.html>
     pub fn __dlpack_device__<'py>(&self, py: Python<'py>) -> PyResult<Py<PyTuple>> {
         let tensor = self.as_dltensor(py)?;
         let device = tensor.device;

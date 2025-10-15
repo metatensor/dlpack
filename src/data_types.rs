@@ -1,5 +1,6 @@
 use super::sys::{DLDataType, DLDataTypeCode};
 
+/// Error that can happen when casting a DLPack pointer to a Rust pointer
 #[derive(Debug)]
 pub enum CastError {
     WrongType { dl_type: DLDataType, rust_type: &'static str },
@@ -139,7 +140,7 @@ mod tests {
         } else {
             panic!("Expected a WrongType error");
         }
-        
+
         let wrong_lanes = DLDataType {
             code: DLDataTypeCode::kDLUInt,
             bits: 32,

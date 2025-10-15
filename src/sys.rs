@@ -179,11 +179,11 @@ pub enum DLDataTypeCode {
 /// attempting to export an array with non-native endianness
 ///
 ///  Examples
-///   - float: type_code = 2, bits = 32, lanes = 1
-///   - float4(vectorized 4 float): type_code = 2, bits = 32, lanes = 4
-///   - int8: type_code = 0, bits = 8, lanes = 1
-///   - std::complex<float>: type_code = 5, bits = 64, lanes = 1
-///   - bool: type_code = 6, bits = 8, lanes = 1 (as per common array library
+///   - `float`: type_code = 2, bits = 32, lanes = 1
+///   - `float4(vectorized 4 float)`: type_code = 2, bits = 32, lanes = 4
+///   - `int8`: type_code = 0, bits = 8, lanes = 1
+///   - `std::complex<float>`: type_code = 5, bits = 64, lanes = 1
+///   - `bool`: type_code = 6, bits = 8, lanes = 1 (as per common array library
 ///     convention, the underlying storage size of bool is 8 bits)
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

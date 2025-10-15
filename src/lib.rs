@@ -1,3 +1,26 @@
+//! DLPack integration for Rust.
+//!
+//! This crate provides wrappers around the DLPack C API, allowing to exchange
+//! tensors with other libraries that support DLPack, such as PyTorch,
+//! TensorFlow, MXNet, CuPy, JAX, etc.
+//!
+//! The C API is available in the `sys` module, and the following higher-level
+//! wrappers are provided:
+//!
+//! - [`DLPackTensor`]: an owned DLPack tensor
+//! - [`DLPackTensorRef`]: a borrowed DLPack tensor (immutable)
+//! - [`DLPackTensorRefMut`]: a borrowed DLPack tensor (mutable)
+//!
+//! We also provide tools to convert from and to other rust types, using the
+//! `TryFrom` trait.
+//!
+//! ## Features
+//!
+//! - [`ndarray`]: enable conversion from and to `ndarray::Array`
+//! - [`pyo3`]: enable passing data from and to python, following the dlpack
+//!   protocol (the data is passed through a `PyCapsule` object).
+
+
 #![allow(clippy::needless_return, clippy::redundant_field_names)]
 
 use std::{ffi::c_void, ptr::NonNull};
@@ -232,7 +255,8 @@ impl<'a> DLPackTensorRef<'a> {
     }
 }
 
-/// TODO
+/// A mutable reference to a DLPack tensor, with data borrowed from some owner,
+/// potentially in another language.
 pub struct DLPackTensorRefMut<'a> {
     raw: sys::DLTensor,
     phantom: std::marker::PhantomData<&'a [u8]>,
