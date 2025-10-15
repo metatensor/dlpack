@@ -2,6 +2,21 @@
 name = "dlpack"
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.74"
+license = "MIT OR Apache-2.0"
+
+authors = [
+    "Guillaume Fraux <guillaume.fraux@epfl.ch>",
+    "Rohit Goswami <rohit.goswami@epfl.ch>",
+]
+
+description = "TODO"
+documentation = "TODO"
+
+
+repository = "https://github.com/metatensor/dlpack"
+readme = "README.md"
+keywords = ["dlpack", "deep-learning", "machine learning"]
 
 [dependencies]
 ndarray = { version = "0.16", optional = true }
