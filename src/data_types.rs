@@ -1,5 +1,6 @@
 use super::sys::{DLDataType, DLDataTypeCode};
 
+/// Error that can happen when casting a DLPack pointer to a Rust pointer
 #[derive(Debug)]
 pub enum CastError {
     WrongType { dl_type: DLDataType, rust_type: &'static str },
@@ -35,6 +36,13 @@ pub trait DLPackPointerCast: Sized {
     fn dlpack_ptr_cast(ptr: *mut std::os::raw::c_void, data_type: DLDataType) -> Result<*mut Self, CastError>;
 }
 
+// a version of ptr::is_aligned that works on Rust 1.74
+fn ptr_is_aligned<T>(ptr: *const T) -> bool {
+    let addr = ptr as usize;
+    let align = std::mem::align_of::<T>();
+    return addr & (align - 1) == 0
+}
+
 macro_rules! impl_dlpack_pointer_cast {
     ($dlpack_code: expr, $($type: ty),+, ) => {
         $(impl DLPackPointerCast for $type {
@@ -48,7 +56,7 @@ macro_rules! impl_dlpack_pointer_cast {
                 }
 
                 let ptr = ptr.cast::<Self>();
-                if !ptr.is_aligned() {
+                if !ptr_is_aligned(ptr) {
                     return Err(CastError::BadAlignment {
                         ptr: ptr as usize,
                         align: ::std::mem::align_of::<$type>(),
@@ -139,7 +147,7 @@ mod tests {
         } else {
             panic!("Expected a WrongType error");
         }
-        
+
         let wrong_lanes = DLDataType {
             code: DLDataTypeCode::kDLUInt,
             bits: 32,

@@ -34,5 +34,5 @@ jobs:
           SCCACHE_GHA_ENABLED: "true"
           RUSTC_WRAPPER: "sccache"
         run: |
-          pip install numpy pydlpack
+          pip install numpy
           cargo test --all-features
