@@ -190,6 +190,14 @@ impl DLPackTensor {
     pub fn byte_offset(&self) -> usize {
         self.as_ref().byte_offset()
     }
+
+    /// SAFETY: Only call this if you know you are taking ownership for FFI.
+    pub fn into_raw_ptr(self) -> *mut sys::DLManagedTensorVersioned {
+        let ptr = self.raw.as_ptr();
+        // Prevent Drop from running (ownership transferred)
+        std::mem::forget(self);
+        ptr
+    }
 }
 
 /// A reference to a DLPack tensor, with data borrowed from some owner,
