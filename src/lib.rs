@@ -28,9 +28,7 @@ use std::{ffi::c_void, ptr::NonNull};
 pub mod sys;
 
 mod data_types;
-
-pub use self::data_types::CastError;
-use self::data_types::DLPackPointerCast;
+pub use self::data_types::{CastError, DLPackPointerCast, GetDLPackDataType};
 
 /// A managed DLPack tensor, carrying ownership of the data.
 ///
