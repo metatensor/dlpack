@@ -142,6 +142,42 @@ impl DLPackTensor {
         }
     }
 
+    /// Gets a raw mutable pointer to the underlying [`sys::DLManagedTensorVersioned`]
+    /// struct.
+    ///
+    /// This function borrows the `DLPackTensor` and does **not** transfer
+    /// ownership. The `Drop` implementation of this `DLPackTensor` will
+    /// still run when it goes out of scope, calling the `deleter` function.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that the returned pointer does not outlive
+    /// this `DLPackTensor` wrapper. The caller must not call the `deleter`
+    /// function on this pointer, as the wrapper will do so on drop.
+    pub fn as_mut_ptr(&self) -> *mut sys::DLManagedTensorVersioned {
+        self.raw.as_ptr()
+    }
+
+    /// Consumes the tensor and returns the raw pointer to the
+    /// [`sys::DLManagedTensorVersioned`] struct.
+    ///
+    /// # Safety
+    ///
+    /// Only call this if you know you are taking ownership for FFI.
+    /// This function **transfers ownership** of the tensor to the caller.
+    ///
+    /// The `Drop` implementation of `DLPackTensor` will **not** be called.
+    /// The caller is now responsible for freeing this tensor,
+    /// typically by passing it to a C API or another library that will
+    /// eventually call its `deleter` function.
+    ///
+    /// Failure to call the `deleter` will result in a memory leak.
+    pub fn into_raw(self) -> *mut sys::DLManagedTensorVersioned {
+        let ptr = self.raw.as_ptr();
+        std::mem::forget(self);
+        ptr
+    }
+
     /// Get a pointer to data in this tensor. This pointer can be a device
     /// pointer according to [`DLPackTensor::device`].
     pub fn data_ptr<T>(&self) -> Result<*const T, CastError>  where T: DLPackPointerCast {
@@ -187,14 +223,6 @@ impl DLPackTensor {
     /// the first element of the tensor.
     pub fn byte_offset(&self) -> usize {
         self.as_ref().byte_offset()
-    }
-
-    /// SAFETY: Only call this if you know you are taking ownership for FFI.
-    pub fn into_raw_ptr(self) -> *mut sys::DLManagedTensorVersioned {
-        let ptr = self.raw.as_ptr();
-        // Prevent Drop from running (ownership transferred)
-        std::mem::forget(self);
-        ptr
     }
 }
 
