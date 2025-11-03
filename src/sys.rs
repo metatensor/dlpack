@@ -1,7 +1,7 @@
 #![allow(non_camel_case_types)]
 #![allow(conflicting_repr_hints)]
 //! This module contains the low-level API for dlpack. It was manually
-//! translated from `dlpack.h` header at version 1.0; and contains types
+//! translated from `dlpack.h` header at version 1.1; and contains types
 //! suitable for use in C FFI.
 
 /// The current major version of dlpack
