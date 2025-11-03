@@ -1,0 +1,45 @@
+name: Docs
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    # Check all PR
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Setup toolchain
+        run: rustup update stable && rustup default stable
+
+      - name: build documentation
+        run: |
+          cargo doc --no-deps --all-features
+          echo "<meta http-equiv=\"refresh\" content=\"0; url=dlpack/index.html\">" > target/doc/index.html
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload artifact to gh-pages
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: target/doc/
+
+  deploy:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    needs: build
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
