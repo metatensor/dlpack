@@ -161,6 +161,11 @@ impl DLPackTensor {
         self.as_ref().device()
     }
 
+    /// Get the data type of this tensor
+    pub fn dtype(&self) -> sys::DLDataType {
+        self.as_ref().dtype()
+    }
+
     /// Get the number of dimensions of this tensor
     pub fn n_dims(&self) -> usize {
         self.as_ref().n_dims()
@@ -223,6 +228,11 @@ impl<'a> DLPackTensorRef<'a> {
     /// Get the device where the data of this tensor lives.
     pub fn device(&self) -> sys::DLDevice {
         return self.raw.device;
+    }
+
+    /// Get the data type of this tensor
+    pub fn dtype(&self) -> sys::DLDataType {
+        return self.raw.dtype;
     }
 
     /// Get the number of dimensions of this tensor
@@ -303,6 +313,11 @@ impl<'a> DLPackTensorRefMut<'a> {
     /// Get the device where the data of this tensor lives.
     pub fn device(&self) -> sys::DLDevice {
         return self.raw.device;
+    }
+
+    /// Get the data type of this tensor
+    pub fn dtype(&self) -> sys::DLDataType {
+        return self.raw.dtype;
     }
 
     /// Get the number of dimensions of this tensor
