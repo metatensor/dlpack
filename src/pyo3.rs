@@ -25,14 +25,14 @@
 //! use pyo3::ffi::c_str;
 //! use pyo3::types::PyCapsule;
 //!
-//! use dlpack::{DLPackTensor, DLPackTensorRef};
+//! use dlpk::{DLPackTensor, DLPackTensorRef};
 //!
 //! Python::initialize();
 //!
 //! // pass data from rust to Python
 //! let array = ndarray::arr2(&[[1.0f32, 2.0, 3.0], [4.0, 5.0, 6.0]]);
 //! let dlpack_tensor = DLPackTensor::try_from(array).unwrap();
-//! let py_tensor = dlpack::pyo3::PyDLPack::try_from(dlpack_tensor).unwrap();
+//! let py_tensor = dlpk::pyo3::PyDLPack::try_from(dlpack_tensor).unwrap();
 //!
 //! Python::attach(|py| {
 //!     let locals = [("np", py.import("numpy").unwrap())].into_py_dict(py).unwrap();

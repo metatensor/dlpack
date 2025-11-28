@@ -15,7 +15,7 @@
 //! # Examples
 //!
 //! ```no_run
-//! use dlpack::{DLPackTensor, DLPackTensorRef};
+//! use dlpk::{DLPackTensor, DLPackTensorRef};
 //! # fn get_tensor_from_somewhere() -> DLPackTensor { unimplemented!() }
 //!
 //! let tensor: DLPackTensor = get_tensor_from_somewhere();

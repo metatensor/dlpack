@@ -19,7 +19,7 @@ jobs:
       - name: build documentation
         run: |
           cargo doc --no-deps --all-features
-          echo "<meta http-equiv=\"refresh\" content=\"0; url=dlpack/index.html\">" > target/doc/index.html
+          echo "<meta http-equiv=\"refresh\" content=\"0; url=dlpk/index.html\">" > target/doc/index.html
 
       - name: Setup Pages
         uses: actions/configure-pages@v5

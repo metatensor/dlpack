@@ -1,5 +1,5 @@
 [package]
-name = "dlpack"
+name = "dlpk"
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.74"
@@ -10,13 +10,11 @@ authors = [
     "Rohit Goswami <rohit.goswami@epfl.ch>",
 ]
 
-description = "TODO"
-documentation = "TODO"
+description = "DLPack integration for Rust"
 
-
-repository = "https://github.com/metatensor/dlpack"
+repository = "https://github.com/metatensor/dlpk"
 readme = "README.md"
-keywords = ["dlpack", "deep-learning", "machine learning"]
+keywords = ["dlpack", "deep learning", "machine learning"]
 
 [dependencies]
 ndarray = { version = "0.16", optional = true }
