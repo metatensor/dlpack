@@ -190,12 +190,15 @@ where
 /*                            ndarray => DLPack                              */
 /*****************************************************************************/
 
-fn array_to_tensor_view<T, D>(array: ndarray::ArrayView<'_, T, D>) -> Result<sys::DLTensor, DLPackNDarrayError> where
+fn array_to_tensor_view<'a, S, D, T>(array: &'a ndarray::ArrayBase<S, D>) -> Result<sys::DLTensor, DLPackNDarrayError> where
     D: ndarray::Dimension,
+    S: ndarray::RawData<Elem = T>,
     T: GetDLPackDataType,
 {
-    let shape = array.shape();
-    let strides = ndarray::ArrayView::strides(&array);
+    // SAFETY: we make sure that shape and strides are valid for the lifetime of
+    // the array
+    let shape: &'a [_] = array.shape();
+    let strides: &'a[_] = ndarray::ArrayBase::strides(array);
 
     // we need a `*const i64` for DLTensor, but we have usize and isize.
     // on 64-bit targets, isize will be the same as i64, so that's fine.
@@ -211,7 +214,6 @@ fn array_to_tensor_view<T, D>(array: ndarray::ArrayView<'_, T, D>) -> Result<sys
     }
     let ndim = shape.len() as i32;
     let shape = shape.as_ptr().cast_mut().cast::<i64>();
-
 
     let device = sys::DLDevice {
         device_type: sys::DLDeviceType::kDLCPU,
@@ -229,13 +231,13 @@ fn array_to_tensor_view<T, D>(array: ndarray::ArrayView<'_, T, D>) -> Result<sys
     });
 }
 
-impl<'a, T, D> TryFrom<ndarray::ArrayView<'a, T, D>> for DLPackTensorRef<'a> where
+impl<'a, T, D> TryFrom<&'a ndarray::ArrayView<'a, T, D>> for DLPackTensorRef<'a> where
     D: ndarray::Dimension,
     T: GetDLPackDataType,
 {
     type Error = DLPackNDarrayError;
 
-    fn try_from(array: ndarray::ArrayView<'a, T, D>) -> Result<Self, Self::Error> {
+    fn try_from(array: &'a ndarray::ArrayView<'a, T, D>) -> Result<Self, Self::Error> {
         let tensor = array_to_tensor_view(array)?;
 
         return Ok(unsafe {
@@ -245,14 +247,14 @@ impl<'a, T, D> TryFrom<ndarray::ArrayView<'a, T, D>> for DLPackTensorRef<'a> whe
     }
 }
 
-impl<'a, T, D> TryFrom<ndarray::ArrayViewMut<'a, T, D>> for DLPackTensorRefMut<'a> where
+impl<'a, T, D> TryFrom<&'a ndarray::ArrayViewMut<'a, T, D>> for DLPackTensorRefMut<'a> where
     D: ndarray::Dimension,
     T: GetDLPackDataType,
 {
     type Error = DLPackNDarrayError;
 
-    fn try_from(array: ndarray::ArrayViewMut<'a, T, D>) -> Result<Self, Self::Error> {
-        let tensor = array_to_tensor_view(array.view())?;
+    fn try_from(array: &'a ndarray::ArrayViewMut<'a, T, D>) -> Result<Self, Self::Error> {
+        let tensor = array_to_tensor_view(array)?;
 
         return Ok(unsafe {
             // SAFETY: we are constraining the lifetime of the return value, and
@@ -269,7 +271,13 @@ impl<'a, T, D> TryFrom<&'a ndarray::Array<T, D>> for DLPackTensorRef<'a> where
     type Error = DLPackNDarrayError;
 
     fn try_from(array: &'a ndarray::Array<T, D>) -> Result<Self, Self::Error> {
-        Self::try_from(array.view())
+        let tensor = array_to_tensor_view(array)?;
+
+        return Ok(unsafe {
+            // SAFETY: we are constraining the lifetime of the return value, and
+            // returning a mut ref from a mut ref
+            DLPackTensorRef::from_raw(tensor)
+        });
     }
 }
 
@@ -280,7 +288,13 @@ impl<'a, T, D> TryFrom<&'a mut ndarray::Array<T, D>> for DLPackTensorRefMut<'a> 
     type Error = DLPackNDarrayError;
 
     fn try_from(array: &'a mut ndarray::Array<T, D>) -> Result<Self, Self::Error> {
-        Self::try_from(array.view_mut())
+        let tensor = array_to_tensor_view(array)?;
+
+        return Ok(unsafe {
+            // SAFETY: we are constraining the lifetime of the return value, and
+            // returning a mut ref from a mut ref
+            DLPackTensorRefMut::from_raw(tensor)
+        });
     }
 }
 
@@ -467,7 +481,8 @@ mod tests {
     #[test]
     fn test_ndarray_to_dlpack() {
         let array = arr2(&[[1i64, 2, 3], [4, 5, 6]]);
-        let dlpack_ref = DLPackTensorRef::try_from(array.view()).unwrap();
+        let view = array.view();
+        let dlpack_ref = DLPackTensorRef::try_from(&view).unwrap();
         let raw = dlpack_ref.raw;
 
         assert_eq!(raw.ndim, 2);
