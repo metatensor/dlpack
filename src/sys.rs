@@ -51,7 +51,7 @@ pub struct DLPackVersion {
 }
 
 /// The device type in DLDevice.
-#[repr(C, u32)]
+#[repr(u32)]
 #[non_exhaustive]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DLDeviceType {
@@ -131,7 +131,7 @@ impl std::fmt::Display for DLDevice {
 
 
 /// The type code options DLDataType.
-#[repr(C, u8)]
+#[repr(u8)]
 #[non_exhaustive]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DLDataTypeCode {
