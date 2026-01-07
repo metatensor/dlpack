@@ -28,6 +28,7 @@ use std::{ffi::c_void, ptr::NonNull};
 pub mod sys;
 
 mod data_types;
+pub use self::data_types::GetDLPackDataType;
 
 pub use self::data_types::CastError;
 use self::data_types::DLPackPointerCast;
@@ -195,6 +196,13 @@ impl DLPackTensor {
     pub fn byte_offset(&self) -> usize {
         self.as_ref().byte_offset()
     }
+
+    /// Get a reference to the underlying DLTensor
+    pub fn as_dltensor(&self) -> &sys::DLTensor {
+        unsafe {
+            &self.raw.as_ref().dl_tensor
+        }
+    }
 }
 
 /// A reference to a DLPack tensor, with data borrowed from some owner,
@@ -262,6 +270,11 @@ impl<'a> DLPackTensorRef<'a> {
     /// to [`DLPackTensorRef::data_ptr`] to get the first element of the tensor.
     pub fn byte_offset(&self) -> usize {
         return self.raw.byte_offset as usize;
+    }
+
+    /// Get a reference to the underlying DLTensor
+    pub fn as_dltensor(&self) -> &sys::DLTensor {
+        &self.raw
     }
 }
 
@@ -349,6 +362,11 @@ impl<'a> DLPackTensorRefMut<'a> {
     /// tensor.
     pub fn byte_offset(&self) -> usize {
         return self.raw.byte_offset as usize;
+    }
+
+    /// Get a reference to the underlying DLTensor
+    pub fn as_dltensor(&self) -> &sys::DLTensor {
+        &self.raw
     }
 }
 
