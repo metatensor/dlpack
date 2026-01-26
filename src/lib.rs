@@ -203,6 +203,19 @@ impl DLPackTensor {
             &self.raw.as_ref().dl_tensor
         }
     }
+
+    /// Consumes the `DLPackTensor`, returning the underlying raw pointer.
+    ///
+    /// # Safety
+    /// 
+    /// The caller is responsible for managing the memory and calling the deleter
+    /// when the tensor is no longer needed.
+    pub fn into_raw(self) -> NonNull<sys::DLManagedTensorVersioned>{
+        let raw = self.raw;
+        // forget so Drop and ergo the deleter are not called
+        std::mem::forget(self);
+        return raw;
+    }
 }
 
 /// A reference to a DLPack tensor, with data borrowed from some owner,
