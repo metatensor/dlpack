@@ -7,7 +7,7 @@
 /// The current major version of dlpack
 pub const DLPACK_MAJOR_VERSION: u32 = 1;
 /// The current minor version of dlpack
-pub const DLPACK_MINOR_VERSION: u32 = 1;
+pub const DLPACK_MINOR_VERSION: u32 = 2;
 
 /// bit mask to indicate that the tensor is read only.
 pub const DLPACK_FLAG_BITMASK_READ_ONLY: u64 = 1 << 0;
@@ -88,6 +88,8 @@ pub enum DLDeviceType {
     kDLHexagon = 16,
     /// Microsoft MAIA devices
     kDLMAIA = 17,
+    /// AWS Trainium
+    kDLTrn = 18,
 }
 
 /// A Device for Tensor and operator.
@@ -119,6 +121,7 @@ impl std::fmt::Display for DLDeviceType {
             DLDeviceType::kDLWebGPU => write!(f, "WebGPU"),
             DLDeviceType::kDLHexagon => write!(f, "Hexagon"),
             DLDeviceType::kDLMAIA => write!(f, "MAIA"),
+            DLDeviceType::kDLTrn => write!(f, "Trn"),
         }
     }
 }
@@ -348,4 +351,59 @@ pub struct DLManagedTensorVersioned {
     pub flags: u64,
     /// DLTensor which is being memory managed
     pub dl_tensor: DLTensor,
+}
+
+/// Producer function pointer for DLPackManagedTensorAllocator.
+pub type DLPackManagedTensorAllocator = Option<unsafe extern "C" fn(
+    prototype: *mut DLTensor,
+    out: *mut *mut DLManagedTensorVersioned,
+    error_ctx: *mut std::os::raw::c_void,
+    set_error: Option<unsafe extern "C" fn(error_ctx: *mut std::os::raw::c_void,
+                                           kind: *const std::os::raw::c_char,
+                                           message: *const std::os::raw::c_char)>
+) -> i32>;
+
+/// Producer function pointer for DLPackManagedTensorFromPyObjectNoSync.
+pub type DLPackManagedTensorFromPyObjectNoSync = Option<unsafe extern "C" fn(
+    py_object: *mut std::os::raw::c_void,
+    out: *mut *mut DLManagedTensorVersioned
+) -> i32>;
+
+/// Producer function pointer for DLPackDLTensorFromPyObjectNoSync.
+pub type DLPackDLTensorFromPyObjectNoSync = Option<unsafe extern "C" fn(
+    py_object: *mut std::os::raw::c_void,
+    out: *mut DLTensor
+) -> i32>;
+
+/// Obtain the current work stream of a device.
+pub type DLPackCurrentWorkStream = Option<unsafe extern "C" fn(
+    device_type: DLDeviceType,
+    device_id: i32,
+    out_current_stream: *mut *mut std::os::raw::c_void
+) -> i32>;
+
+/// Imports a DLManagedTensorVersioned to a PyObject* Tensor/NDArray.
+pub type DLPackManagedTensorToPyObjectNoSync = Option<unsafe extern "C" fn(
+    tensor: *mut DLManagedTensorVersioned,
+    out_py_object: *mut *mut std::os::raw::c_void
+) -> i32>;
+
+/// DLPackExchangeAPI stable header.
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct DLPackExchangeAPIHeader {
+    pub version: DLPackVersion,
+    pub prev_api: *mut DLPackExchangeAPIHeader,
+}
+
+/// Framework-specific function pointers table for DLPack exchange.
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct DLPackExchangeAPI {
+    pub header: DLPackExchangeAPIHeader,
+    pub managed_tensor_allocator: DLPackManagedTensorAllocator,
+    pub managed_tensor_from_py_object_no_sync: DLPackManagedTensorFromPyObjectNoSync,
+    pub managed_tensor_to_py_object_no_sync: DLPackManagedTensorToPyObjectNoSync,
+    pub dltensor_from_py_object_no_sync: DLPackDLTensorFromPyObjectNoSync,
+    pub current_work_stream: DLPackCurrentWorkStream,
 }
