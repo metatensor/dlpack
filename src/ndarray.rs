@@ -379,10 +379,7 @@ where
         };
 
         let managed_tensor = sys::DLManagedTensorVersioned {
-            version: sys::DLPackVersion {
-                major: sys::DLPACK_MAJOR_VERSION,
-                minor: sys::DLPACK_MINOR_VERSION,
-            },
+            version: sys::DLPackVersion::current(),
             manager_ctx: Box::into_raw(ctx) as *mut _,
             deleter: Some(deleter_fn::<Array<T, D>>),
             flags: 0,

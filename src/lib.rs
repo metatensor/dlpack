@@ -33,6 +33,140 @@ pub use self::data_types::GetDLPackDataType;
 pub use self::data_types::CastError;
 use self::data_types::DLPackPointerCast;
 
+impl sys::DLPackVersion {
+    /// Returns the DLPack version supported by this library.
+    pub const fn current() -> Self {
+        Self {
+            major: sys::DLPACK_MAJOR_VERSION,
+            minor: sys::DLPACK_MINOR_VERSION,
+        }
+    }
+}
+
+impl sys::DLDevice {
+    /// Get a CPU device (1), the `device_id` is always 0.
+    pub const fn cpu() -> Self {
+        Self {
+            device_type: sys::DLDeviceType::kDLCPU,
+            device_id: 0,
+        }
+    }
+
+    /// Get a CUDA GPU device (2) with the given `device_id`.
+    pub const fn cuda(device_id: i32) -> Self {
+        Self {
+            device_type: sys::DLDeviceType::kDLCUDA,
+            device_id,
+        }
+    }
+
+    /// Get a pinned CUDA CPU memory device (3) allocated by `cudaMallocHost`.
+    pub const fn cuda_host() -> Self {
+        Self {
+            device_type: sys::DLDeviceType::kDLCUDAHost,
+            device_id: 0,
+        }
+    }
+
+    /// Get an OpenCL device (4) with the given `device_id`.
+    pub const fn opencl(device_id: i32) -> Self {
+        Self {
+            device_type: sys::DLDeviceType::kDLOpenCL,
+            device_id,
+        }
+    }
+
+    /// Get a Vulkan device (7) with the given `device_id` for next generation graphics.
+    pub const fn vulkan(device_id: i32) -> Self {
+        Self {
+            device_type: sys::DLDeviceType::kDLVulkan,
+            device_id,
+        }
+    }
+
+    /// Get a Metal device (8) with the given `device_id` for Apple GPUs.
+    pub const fn metal(device_id: i32) -> Self {
+        Self {
+            device_type: sys::DLDeviceType::kDLMetal,
+            device_id,
+        }
+    }
+
+    /// Get a VPI device (9) with the given `device_id` for Verilog simulator buffers.
+    pub const fn vpi(device_id: i32) -> Self {
+        Self {
+            device_type: sys::DLDeviceType::kDLVPI,
+            device_id,
+        }
+    }
+
+    /// Get a ROCm device (10) with the given `device_id` for AMD GPUs.
+    pub const fn rocm(device_id: i32) -> Self {
+        Self {
+            device_type: sys::DLDeviceType::kDLROCM,
+            device_id,
+        }
+    }
+
+    /// Get a pinned ROCm CPU memory device (11) allocated by `hipMallocHost`.
+    pub const fn rocm_host() -> Self {
+        Self {
+            device_type: sys::DLDeviceType::kDLROCMHost,
+            device_id: 0,
+        }
+    }
+
+    /// Get a reserved extension device (12) with the given `device_id`.
+    pub const fn ext_dev(device_id: i32) -> Self {
+        Self {
+            device_type: sys::DLDeviceType::kDLExtDev,
+            device_id,
+        }
+    }
+
+    /// Get a CUDA managed/unified memory device (13) allocated by
+    /// `cudaMallocManaged`, the `device_id` is always 0.
+    pub const fn cuda_managed() -> Self {
+        Self {
+            device_type: sys::DLDeviceType::kDLCUDAManaged,
+            device_id: 0,
+        }
+    }
+
+    /// Get a oneAPI device (14) for unified shared memory on a non-partitioned
+    /// device, the `device_id` is always 0.
+    pub const fn oneapi() -> Self {
+        Self {
+            device_type: sys::DLDeviceType::kDLOneAPI,
+            device_id: 0,
+        }
+    }
+
+    /// Get a WebGPU device (15) with the given `device_id` for the next generation standard.
+    pub const fn webgpu(device_id: i32) -> Self {
+        Self {
+            device_type: sys::DLDeviceType::kDLWebGPU,
+            device_id,
+        }
+    }
+
+    /// Get a Qualcomm Hexagon DSP device (16) with the given `device_id`.
+    pub const fn hexagon(device_id: i32) -> Self {
+        Self {
+            device_type: sys::DLDeviceType::kDLHexagon,
+            device_id,
+        }
+    }
+
+    /// Get a Microsoft MAIA device (17) with the given `device_id`.
+    pub const fn maia(device_id: i32) -> Self {
+        Self {
+            device_type: sys::DLDeviceType::kDLMAIA,
+            device_id,
+        }
+    }
+}
+
 /// A managed DLPack tensor, carrying ownership of the data.
 ///
 /// Convertion from and to other array types is handled though the different
