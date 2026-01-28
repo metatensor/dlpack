@@ -259,11 +259,17 @@ impl<'py> TryFrom<Bound<'py, PyCapsule>> for DLPackTensorRef<'py> {
         Python::attach(|py| {
             let wrapper = PyDLPack::new(py, value.unbind())?;
             let dltensor = wrapper.as_dltensor(py)?;
+            let version = if wrapper.is_versioned {
+                let ptr = wrapper.capsule.bind(py).pointer() as *const sys::DLManagedTensorVersioned;
+                unsafe { Some((*ptr).version) }
+            } else {
+                None
+            };
 
             // SAFETY: The lifetime of the returned reference is tied to the
             // lifetime GIL lifetime.
             let tensor = unsafe {
-                DLPackTensorRef::from_raw(dltensor.clone())
+                DLPackTensorRef::from_raw_with_version(dltensor.clone(), version)
             };
 
             Ok(tensor)
@@ -322,12 +328,14 @@ impl TryFrom<DLPackTensor> for PyDLPack {
 mod tests {
     use crate::{DLPackTensor, DLPackTensorRef};
     use crate::data_types::GetDLPackDataType;
-    use crate::sys::{DLPackVersion, DLDevice, DLManagedTensorVersioned, DLTensor};
+    use crate::sys::{DLPackVersion, DLDevice, DLManagedTensorVersioned, DLTensor, DLManagedTensor};
 
     use super::PyDLPack;
     use super::DLTENSOR_VERSIONED_NAME;
+    use super::DLTENSOR_NAME;
 
-    use ndarray::{Array, ArrayView2};
+    use ndarray::{Array, ArrayView1, ArrayView2};
+
     use pyo3::ffi::c_str;
     use pyo3::prelude::*;
     use pyo3::types::{PyCapsule, PyDict};
@@ -492,6 +500,52 @@ assert np.allclose(array, expected)
             let result = DLPackTensor::try_from(&capsule);
             assert!(result.is_ok(), "Legacy v1.0 tensors should permit NULL strides");
             
+            Ok(())
+        })
+    }
+
+    #[test]
+    fn test_unversioned_capsule_to_ndarray() -> PyResult<()> {
+        Python::initialize();
+        Python::attach(|py| {
+            let mut shape = vec![2i64];
+            let mut data = vec![1.0f32, 2.0];
+
+            // Create a legacy DLTensor (v1.0 style)
+            let dl_tensor = DLTensor {
+                data: data.as_mut_ptr().cast(),
+                device: DLDevice::cpu(),
+                ndim: 1,
+                dtype: f32::get_dlpack_data_type(),
+                shape: shape.as_mut_ptr(),
+                strides: std::ptr::null_mut(), // NULL is valid for v1.0
+                byte_offset: 0,
+            };
+
+            // Wrap it in the legacy DLManagedTensor struct
+            let managed = Box::into_raw(Box::new(DLManagedTensor {
+                dl_tensor,
+                manager_ctx: std::ptr::null_mut(),
+                deleter: None,
+            }));
+
+            // Construct the capsule with the legacy name 'dltensor'
+            let capsule = unsafe {
+                Bound::from_owned_ptr_or_err(py, pyo3::ffi::PyCapsule_New(
+                    managed.cast(),
+                    DLTENSOR_NAME.as_ptr(),
+                    None,
+                ))?.cast_into_unchecked::<PyCapsule>()
+            };
+
+            // Extraction should succeed and default to legacy behavior
+            let dlpack_ref = DLPackTensorRef::try_from(capsule)?;
+            assert!(dlpack_ref.version().is_none());
+            
+            let view = ArrayView1::<f32>::try_from(dlpack_ref).unwrap();
+            assert_eq!(view.len(), 2);
+            
+            unsafe { drop(Box::from_raw(managed)); }
             Ok(())
         })
     }
