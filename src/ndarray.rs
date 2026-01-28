@@ -115,18 +115,26 @@ impl<'a, T, D> TryFrom<DLPackTensorRef<'a>> for ndarray::ArrayView<'a, T, D> whe
         let shape = <D as DimFromVec>::dim_from_vec(shape)?;
 
         let array;
-        if let Some(strides) = DLPackTensorRef::strides(&tensor) {
-            let strides = strides.iter().map(|&s| s as usize).collect::<Vec<_>>();
-            let strides = <D as DimFromVec>::dim_from_vec(strides)?;
-            let shape = shape.strides(strides);
-            array = unsafe {
-                ndarray::ArrayView::<T, _>::from_shape_ptr(shape, ptr)
-            };
-        } else {
-            array = unsafe {
-                ndarray::ArrayView::<T, _>::from_shape_ptr(shape, ptr)
-            };
+        let strides_opt = DLPackTensorRef::strides(&tensor);
+        // If the version is None, we assume it is a legacy version (< 1.2).
+        // This allows NULL strides for unversioned tensors.
+        let is_v1_2_or_newer = tensor.version().map_or(false, |v| {
+            v.major > 1 || (v.major == 1 && v.minor >= 2)
+        });
+
+        // v1.2+ onwards: strides cannot be NULL if ndim != 0
+        if is_v1_2_or_newer && tensor.n_dims() > 0 && strides_opt.is_none() {
+            return Err(ndarray::ShapeError::from_kind(ndarray::ErrorKind::IncompatibleLayout).into());
         }
+        array = match strides_opt{
+            Some(strides) =>{
+                let s_vec = strides.iter().map(|&s| s as usize).collect::<Vec<_>>();
+                let dim_strides = <D as DimFromVec>::dim_from_vec(s_vec)?;
+                let shape = shape.strides(dim_strides);
+                unsafe { ndarray::ArrayView::from_shape_ptr(shape, ptr) }
+            }
+            None => unsafe { ndarray::ArrayView::from_shape_ptr(shape, ptr) }
+        };
 
         return Ok(array);
     }
@@ -379,10 +387,7 @@ where
         };
 
         let managed_tensor = sys::DLManagedTensorVersioned {
-            version: sys::DLPackVersion {
-                major: sys::DLPACK_MAJOR_VERSION,
-                minor: sys::DLPACK_MINOR_VERSION,
-            },
+            version: sys::DLPackVersion::current(),
             manager_ctx: Box::into_raw(ctx) as *mut _,
             deleter: Some(deleter_fn::<Array<T, D>>),
             flags: 0,
@@ -560,5 +565,27 @@ mod tests {
         let final_array: Array<f32, _> = tensor.try_into().unwrap();
 
         assert_eq!(original_array, final_array);
+    }
+
+    #[test]
+    fn test_v1_2_null_strides_error() {
+        let mut data = vec![1.0f32, 2.0];
+        let mut shape = vec![2i64];
+        
+        let dl_tensor = DLTensor {
+           data: data.as_mut_ptr() as *mut _,
+            device: DLDevice::cpu(),
+            ndim: 1,
+            dtype: f32::get_dlpack_data_type(),
+            shape: shape.as_mut_ptr(),
+            strides: std::ptr::null_mut(), // NULL strides
+            byte_offset: 0,
+        };
+
+        let dlpack_ref = unsafe { 
+            DLPackTensorRef::from_raw_with_version(dl_tensor, Some(sys::DLPackVersion::current())) 
+        };
+        let result = ArrayView1::<f32>::try_from(dlpack_ref);
+        assert!(result.is_err());
     }
 }

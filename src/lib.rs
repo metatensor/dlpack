@@ -33,6 +33,148 @@ pub use self::data_types::GetDLPackDataType;
 pub use self::data_types::CastError;
 use self::data_types::DLPackPointerCast;
 
+impl sys::DLPackVersion {
+    /// Returns the DLPack version supported by this library.
+    pub const fn current() -> Self {
+        Self {
+            major: sys::DLPACK_MAJOR_VERSION,
+            minor: sys::DLPACK_MINOR_VERSION,
+        }
+    }
+}
+
+impl sys::DLDevice {
+    /// Get a CPU device (1), the `device_id` is always 0.
+    pub const fn cpu() -> Self {
+        Self {
+            device_type: sys::DLDeviceType::kDLCPU,
+            device_id: 0,
+        }
+    }
+
+    /// Get a CUDA GPU device (2) with the given `device_id`.
+    pub const fn cuda(device_id: i32) -> Self {
+        Self {
+            device_type: sys::DLDeviceType::kDLCUDA,
+            device_id,
+        }
+    }
+
+    /// Get a pinned CUDA CPU memory device (3) allocated by `cudaMallocHost`.
+    pub const fn cuda_host() -> Self {
+        Self {
+            device_type: sys::DLDeviceType::kDLCUDAHost,
+            device_id: 0,
+        }
+    }
+
+    /// Get an OpenCL device (4) with the given `device_id`.
+    pub const fn opencl(device_id: i32) -> Self {
+        Self {
+            device_type: sys::DLDeviceType::kDLOpenCL,
+            device_id,
+        }
+    }
+
+    /// Get a Vulkan device (7) with the given `device_id` for next generation graphics.
+    pub const fn vulkan(device_id: i32) -> Self {
+        Self {
+            device_type: sys::DLDeviceType::kDLVulkan,
+            device_id,
+        }
+    }
+
+    /// Get a Metal device (8) with the given `device_id` for Apple GPUs.
+    pub const fn metal(device_id: i32) -> Self {
+        Self {
+            device_type: sys::DLDeviceType::kDLMetal,
+            device_id,
+        }
+    }
+
+    /// Get a VPI device (9) with the given `device_id` for Verilog simulator buffers.
+    pub const fn vpi(device_id: i32) -> Self {
+        Self {
+            device_type: sys::DLDeviceType::kDLVPI,
+            device_id,
+        }
+    }
+
+    /// Get a ROCm device (10) with the given `device_id` for AMD GPUs.
+    pub const fn rocm(device_id: i32) -> Self {
+        Self {
+            device_type: sys::DLDeviceType::kDLROCM,
+            device_id,
+        }
+    }
+
+    /// Get a pinned ROCm CPU memory device (11) allocated by `hipMallocHost`.
+    pub const fn rocm_host() -> Self {
+        Self {
+            device_type: sys::DLDeviceType::kDLROCMHost,
+            device_id: 0,
+        }
+    }
+
+    /// Get a reserved extension device (12) with the given `device_id`.
+    pub const fn ext_dev(device_id: i32) -> Self {
+        Self {
+            device_type: sys::DLDeviceType::kDLExtDev,
+            device_id,
+        }
+    }
+
+    /// Get a CUDA managed/unified memory device (13) allocated by
+    /// `cudaMallocManaged`, the `device_id` is always 0.
+    pub const fn cuda_managed() -> Self {
+        Self {
+            device_type: sys::DLDeviceType::kDLCUDAManaged,
+            device_id: 0,
+        }
+    }
+
+    /// Get a oneAPI device (14) for unified shared memory on a non-partitioned
+    /// device, the `device_id` is always 0.
+    pub const fn oneapi() -> Self {
+        Self {
+            device_type: sys::DLDeviceType::kDLOneAPI,
+            device_id: 0,
+        }
+    }
+
+    /// Get a WebGPU device (15) with the given `device_id` for the next generation standard.
+    pub const fn webgpu(device_id: i32) -> Self {
+        Self {
+            device_type: sys::DLDeviceType::kDLWebGPU,
+            device_id,
+        }
+    }
+
+    /// Get a Qualcomm Hexagon DSP device (16) with the given `device_id`.
+    pub const fn hexagon(device_id: i32) -> Self {
+        Self {
+            device_type: sys::DLDeviceType::kDLHexagon,
+            device_id,
+        }
+    }
+
+    /// Get a Microsoft MAIA device (17) with the given `device_id`.
+    pub const fn maia(device_id: i32) -> Self {
+        Self {
+            device_type: sys::DLDeviceType::kDLMAIA,
+            device_id,
+        }
+    }
+
+    /// Get an AWS Trainium device (18) with the given `device_id`.
+    pub const fn trn(device_id: i32) -> Self {
+        Self {
+            device_type: sys::DLDeviceType::kDLTrn,
+            device_id,
+        }
+    }
+}
+
 /// A managed DLPack tensor, carrying ownership of the data.
 ///
 /// Convertion from and to other array types is handled though the different
@@ -140,10 +282,11 @@ impl DLPackTensor {
             assert!(self.raw.as_ref().flags & sys::DLPACK_FLAG_BITMASK_IS_COPIED == 0, "Can not create a mutable reference to a borrowed tensor");
             assert!(self.raw.as_ref().flags & sys::DLPACK_FLAG_BITMASK_READ_ONLY != 0, "Can not create a mutable reference to a read-only tensor");
 
-            // SAFETY: we are constaining the returned reference lifetime
-            DLPackTensorRefMut::from_raw(self.raw.as_ref().dl_tensor.clone())
-        }
-    }
+            let version = self.raw.as_ref().version;
+            // SAFETY: we are constraining the returned reference lifetime
+            DLPackTensorRefMut::from_raw_with_version(self.raw.as_ref().dl_tensor.clone(), Some(version))
+         }
+     }
 
     /// Get a pointer to data in this tensor. This pointer can be a device
     /// pointer according to [`DLPackTensor::device`].
@@ -222,6 +365,7 @@ impl DLPackTensor {
 /// potentially in another language.
 pub struct DLPackTensorRef<'a> {
     pub raw: sys::DLTensor,
+    version: Option<sys::DLPackVersion>,
     phantom: std::marker::PhantomData<&'a [u8]>,
 }
 
@@ -235,6 +379,16 @@ impl<'a> DLPackTensorRef<'a> {
     pub unsafe fn from_raw(tensor: sys::DLTensor) -> DLPackTensorRef<'a> {
         DLPackTensorRef {
             raw: tensor,
+            version: None,
+            phantom: std::marker::PhantomData
+        }
+    }
+
+    /// Create a `DLPackTensorRef` from a raw `DLTensor` with an explicit version
+    pub unsafe fn from_raw_with_version(tensor: sys::DLTensor, version: Option<sys::DLPackVersion>) -> DLPackTensorRef<'a> {
+        DLPackTensorRef {
+            raw: tensor,
+            version,
             phantom: std::marker::PhantomData
         }
     }
@@ -289,12 +443,18 @@ impl<'a> DLPackTensorRef<'a> {
     pub fn as_dltensor(&self) -> &sys::DLTensor {
         &self.raw
     }
+
+    /// Get the DLPack version of this tensor
+    pub fn version(&self) -> Option<sys::DLPackVersion> {
+        self.version
+    }
 }
 
 /// A mutable reference to a DLPack tensor, with data borrowed from some owner,
 /// potentially in another language.
 pub struct DLPackTensorRefMut<'a> {
     raw: sys::DLTensor,
+    pub version: Option<sys::DLPackVersion>,
     phantom: std::marker::PhantomData<&'a [u8]>,
 }
 
@@ -310,6 +470,16 @@ impl<'a> DLPackTensorRefMut<'a> {
     pub unsafe fn from_raw(tensor: sys::DLTensor) -> DLPackTensorRefMut<'a> {
         DLPackTensorRefMut {
             raw: tensor,
+            version: None,
+            phantom: std::marker::PhantomData
+        }
+    }
+
+    /// Create a `DLPackTensorRefMut` from a raw `DLTensor` with an explicit version
+    pub unsafe fn from_raw_with_version(tensor: sys::DLTensor, version: Option<sys::DLPackVersion>) -> DLPackTensorRefMut<'a> {
+        DLPackTensorRefMut {
+            raw: tensor,
+            version,
             phantom: std::marker::PhantomData
         }
     }
@@ -318,7 +488,7 @@ impl<'a> DLPackTensorRefMut<'a> {
     pub fn as_ref(&self) -> DLPackTensorRef<'_> {
         unsafe {
             // SAFETY: we are constaining the returned reference lifetime
-            DLPackTensorRef::from_raw(self.raw.clone())
+            DLPackTensorRef::from_raw_with_version(self.raw.clone(), self.version)
         }
     }
 
@@ -380,6 +550,10 @@ impl<'a> DLPackTensorRefMut<'a> {
     /// Get a reference to the underlying DLTensor
     pub fn as_dltensor(&self) -> &sys::DLTensor {
         &self.raw
+    }
+    /// Get the version of the tensor if known
+    pub fn version(&self) -> Option<sys::DLPackVersion> {
+        self.version
     }
 }
 
