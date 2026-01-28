@@ -185,6 +185,12 @@ pub enum DLDataTypeCode {
 ///   - `std::complex<float>`: type_code = 5, bits = 64, lanes = 1
 ///   - `bool`: type_code = 6, bits = 8, lanes = 1 (as per common array library
 ///     convention, the underlying storage size of bool is 8 bits)
+///   - float8_e4m3: type_code = 8, bits = 8, lanes = 1 (packed in memory)
+///   - float6_e3m2fn: type_code = 16, bits = 6, lanes = 1 (packed in memory)
+///   - float4_e2m1fn: type_code = 17, bits = 4, lanes = 1 (packed in memory)
+///
+/// When a sub-byte type is packed, DLPack requires the data to be in little bit-endian, i.e.,
+/// for a packed data set D ((D >> (i * bits)) && bit_mask) stores the i-th element.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct DLDataType {
@@ -220,9 +226,9 @@ impl std::fmt::Display for DLDataType {
             DLDataTypeCode::kDLFloat8_e5m2 => "f8_e5m2",
             DLDataTypeCode::kDLFloat8_e5m2fnuz => "f8_e5m2fnuz",
             DLDataTypeCode::kDLFloat8_e8m0fnu => "f8_e8m0fnu",
-            DLDataTypeCode::kDLFloat6_e2m3fn => "f8_e2m3fn",
-            DLDataTypeCode::kDLFloat6_e3m2fn => "f8_e3m2fn",
-            DLDataTypeCode::kDLFloat4_e2m1fn => "f8_e2m1fn",
+            DLDataTypeCode::kDLFloat6_e2m3fn => "f6_e2m3fn",
+            DLDataTypeCode::kDLFloat6_e3m2fn => "f6_e3m2fn",
+            DLDataTypeCode::kDLFloat4_e2m1fn => "f4_e2m1fn",
         };
 
         if self.lanes == 1 {
