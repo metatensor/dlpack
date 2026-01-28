@@ -283,10 +283,11 @@ impl DLPackTensor {
             assert!(self.raw.as_ref().flags & sys::DLPACK_FLAG_BITMASK_IS_COPIED == 0, "Can not create a mutable reference to a borrowed tensor");
             assert!(self.raw.as_ref().flags & sys::DLPACK_FLAG_BITMASK_READ_ONLY != 0, "Can not create a mutable reference to a read-only tensor");
 
-            // SAFETY: we are constaining the returned reference lifetime
-            DLPackTensorRefMut::from_raw(self.raw.as_ref().dl_tensor.clone())
-        }
-    }
+            let version = self.raw.as_ref().version;
+            // SAFETY: we are constraining the returned reference lifetime
+            DLPackTensorRefMut::from_raw_with_version(self.raw.as_ref().dl_tensor.clone(), Some(version))
+         }
+     }
 
     /// Get a pointer to data in this tensor. This pointer can be a device
     /// pointer according to [`DLPackTensor::device`].
@@ -365,6 +366,7 @@ impl DLPackTensor {
 /// potentially in another language.
 pub struct DLPackTensorRef<'a> {
     pub raw: sys::DLTensor,
+    version: Option<sys::DLPackVersion>,
     phantom: std::marker::PhantomData<&'a [u8]>,
 }
 
@@ -378,6 +380,16 @@ impl<'a> DLPackTensorRef<'a> {
     pub unsafe fn from_raw(tensor: sys::DLTensor) -> DLPackTensorRef<'a> {
         DLPackTensorRef {
             raw: tensor,
+            version: None,
+            phantom: std::marker::PhantomData
+        }
+    }
+
+    /// Create a `DLPackTensorRef` from a raw `DLTensor` with an explicit version
+    pub unsafe fn from_raw_with_version(tensor: sys::DLTensor, version: Option<sys::DLPackVersion>) -> DLPackTensorRef<'a> {
+        DLPackTensorRef {
+            raw: tensor,
+            version,
             phantom: std::marker::PhantomData
         }
     }
@@ -432,12 +444,18 @@ impl<'a> DLPackTensorRef<'a> {
     pub fn as_dltensor(&self) -> &sys::DLTensor {
         &self.raw
     }
+
+    /// Get the DLPack version of this tensor
+    pub fn version(&self) -> Option<sys::DLPackVersion> {
+        self.version
+    }
 }
 
 /// A mutable reference to a DLPack tensor, with data borrowed from some owner,
 /// potentially in another language.
 pub struct DLPackTensorRefMut<'a> {
     raw: sys::DLTensor,
+    pub version: Option<sys::DLPackVersion>,
     phantom: std::marker::PhantomData<&'a [u8]>,
 }
 
@@ -453,6 +471,16 @@ impl<'a> DLPackTensorRefMut<'a> {
     pub unsafe fn from_raw(tensor: sys::DLTensor) -> DLPackTensorRefMut<'a> {
         DLPackTensorRefMut {
             raw: tensor,
+            version: None,
+            phantom: std::marker::PhantomData
+        }
+    }
+
+    /// Create a `DLPackTensorRefMut` from a raw `DLTensor` with an explicit version
+    pub unsafe fn from_raw_with_version(tensor: sys::DLTensor, version: Option<sys::DLPackVersion>) -> DLPackTensorRefMut<'a> {
+        DLPackTensorRefMut {
+            raw: tensor,
+            version,
             phantom: std::marker::PhantomData
         }
     }
@@ -461,7 +489,7 @@ impl<'a> DLPackTensorRefMut<'a> {
     pub fn as_ref(&self) -> DLPackTensorRef<'_> {
         unsafe {
             // SAFETY: we are constaining the returned reference lifetime
-            DLPackTensorRef::from_raw(self.raw.clone())
+            DLPackTensorRef::from_raw_with_version(self.raw.clone(), self.version)
         }
     }
 
@@ -523,6 +551,10 @@ impl<'a> DLPackTensorRefMut<'a> {
     /// Get a reference to the underlying DLTensor
     pub fn as_dltensor(&self) -> &sys::DLTensor {
         &self.raw
+    }
+    /// Get the version of the tensor if known
+    pub fn version(&self) -> Option<sys::DLPackVersion> {
+        self.version
     }
 }
 
