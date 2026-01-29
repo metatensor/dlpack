@@ -114,14 +114,7 @@ impl<'a, T, D> TryFrom<DLPackTensorRef<'a>> for ndarray::ArrayView<'a, T, D> whe
         let shape = tensor.shape().iter().map(|&s| s as usize).collect::<Vec<_>>();
         let shape = <D as DimFromVec>::dim_from_vec(shape)?;
 
-        let array;
-        let strides_opt = DLPackTensorRef::strides(&tensor);
-
-        // v1.2+ onwards: strides cannot be NULL if ndim != 0
-        if tensor.n_dims() > 0 && strides_opt.is_none() {
-            return Err(ndarray::ShapeError::from_kind(ndarray::ErrorKind::IncompatibleLayout).into());
-        }
-        array = match strides_opt{
+        let array = match DLPackTensorRef::strides(&tensor) {
             Some(strides) =>{
                 let s_vec = strides.iter().map(|&s| s as usize).collect::<Vec<_>>();
                 let dim_strides = <D as DimFromVec>::dim_from_vec(s_vec)?;
@@ -560,25 +553,5 @@ mod tests {
         let final_array: Array<f32, _> = tensor.try_into().unwrap();
 
         assert_eq!(original_array, final_array);
-    }
-
-    #[test]
-    fn test_v1_2_null_strides_error() {
-        let mut data = vec![1.0f32, 2.0];
-        let mut shape = vec![2i64];
-        
-        let dl_tensor = DLTensor {
-           data: data.as_mut_ptr() as *mut _,
-            device: DLDevice::cpu(),
-            ndim: 1,
-            dtype: f32::get_dlpack_data_type(),
-            shape: shape.as_mut_ptr(),
-            strides: std::ptr::null_mut(), // NULL strides
-            byte_offset: 0,
-        };
-
-        let dlpack_ref = unsafe { DLPackTensorRef::from_raw(dl_tensor) };
-        let result = ArrayView1::<f32>::try_from(dlpack_ref);
-        assert!(result.is_err());
     }
 }
