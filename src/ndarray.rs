@@ -116,14 +116,9 @@ impl<'a, T, D> TryFrom<DLPackTensorRef<'a>> for ndarray::ArrayView<'a, T, D> whe
 
         let array;
         let strides_opt = DLPackTensorRef::strides(&tensor);
-        // If the version is None, we assume it is a legacy version (< 1.2).
-        // This allows NULL strides for unversioned tensors.
-        let is_v1_2_or_newer = tensor.version().map_or(false, |v| {
-            v.major > 1 || (v.major == 1 && v.minor >= 2)
-        });
 
         // v1.2+ onwards: strides cannot be NULL if ndim != 0
-        if is_v1_2_or_newer && tensor.n_dims() > 0 && strides_opt.is_none() {
+        if tensor.n_dims() > 0 && strides_opt.is_none() {
             return Err(ndarray::ShapeError::from_kind(ndarray::ErrorKind::IncompatibleLayout).into());
         }
         array = match strides_opt{
@@ -582,9 +577,7 @@ mod tests {
             byte_offset: 0,
         };
 
-        let dlpack_ref = unsafe { 
-            DLPackTensorRef::from_raw_with_version(dl_tensor, Some(sys::DLPackVersion::current())) 
-        };
+        let dlpack_ref = unsafe { DLPackTensorRef::from_raw(dl_tensor) };
         let result = ArrayView1::<f32>::try_from(dlpack_ref);
         assert!(result.is_err());
     }
