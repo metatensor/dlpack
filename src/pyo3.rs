@@ -211,6 +211,16 @@ impl<'py> TryFrom<&Bound<'py, PyCapsule>> for DLPackTensor {
 
         let pointer = capsule.pointer().cast::<DLManagedTensorVersioned>();
         if let Some(pointer) = NonNull::new(pointer) {
+            let tensor_ref = unsafe { pointer.as_ref() };
+            let version = tensor_ref.version;
+            let is_v1_2_or_newer = version.major > 1 || (version.major == 1 && version.minor >= 2);
+            let dltensor = &tensor_ref.dl_tensor;
+            // Enforce v1.2+ stride requirement if ndim > 0
+            if is_v1_2_or_newer && dltensor.ndim > 0 && dltensor.strides.is_null() {
+                return Err(PyErr::new::<PyValueError, _>(
+                    "DLPack v1.2+ requires non-NULL strides for non-scalar tensors"
+                ));
+            }
             unsafe {
                 // set the name to "used_dltensor_versioned" so that
                 // the capsule destructor does not free the tensor
@@ -311,8 +321,11 @@ impl TryFrom<DLPackTensor> for PyDLPack {
 #[cfg(test)]
 mod tests {
     use crate::{DLPackTensor, DLPackTensorRef};
+    use crate::data_types::GetDLPackDataType;
+    use crate::sys::{DLPackVersion, DLDevice, DLManagedTensorVersioned, DLTensor};
 
     use super::PyDLPack;
+    use super::DLTENSOR_VERSIONED_NAME;
 
     use ndarray::{Array, ArrayView2};
     use pyo3::ffi::c_str;
@@ -400,4 +413,86 @@ assert np.allclose(array, expected)
 
     test_numpy_to_ndarray_via_dlpack_dtype!(test_from_numpy_i64, i64, "int64");
     test_ndarray_to_numpy_via_dlpack_dtype!(test_to_numpy_i64, i64, "int64");
+
+    #[test]
+    fn test_null_strides_fails_conversion() -> PyResult<()> {
+        Python::initialize();
+        Python::attach(|py| {
+            let mut shape = vec![2i64];
+            let mut data = vec![1.0f32, 2.0];
+
+            let dl_tensor = DLTensor {
+                data: data.as_mut_ptr().cast(),
+                device: DLDevice::cpu(),
+                ndim: 1,
+                dtype: f32::get_dlpack_data_type(),
+                shape: shape.as_mut_ptr(),
+                strides: std::ptr::null_mut(), // Invalid for ndim > 0 in v1.2+
+                byte_offset: 0,
+            };
+
+            let managed = Box::into_raw(Box::new(DLManagedTensorVersioned {
+                version: DLPackVersion::current(),
+                manager_ctx: std::ptr::null_mut(),
+                deleter: None,
+                flags: 0,
+                dl_tensor,
+            }));
+
+            let capsule = unsafe {
+                Bound::from_owned_ptr_or_err(py, pyo3::ffi::PyCapsule_New(
+                    managed.cast(),
+                    DLTENSOR_VERSIONED_NAME.as_ptr(),
+                    None,
+                ))?.cast_into_unchecked::<PyCapsule>()
+            };
+
+            let result = DLPackTensor::try_from(&capsule);
+            assert!(result.is_err());
+            
+            // Cleanup the leaked memory since the capsule didn't take ownership
+            unsafe { drop(Box::from_raw(managed)); }
+            Ok(())
+        })
+    }
+
+    #[test]
+    fn test_v1_0_null_strides_allowed() -> PyResult<()> {
+        Python::initialize();
+        Python::attach(|py| {
+            let mut shape = vec![2i64];
+            let mut data = vec![1.0f32, 2.0];
+
+            let dl_tensor = DLTensor {
+                data: data.as_mut_ptr().cast(),
+                device: DLDevice::cpu(),
+                ndim: 1,
+                dtype: f32::get_dlpack_data_type(),
+                shape: shape.as_mut_ptr(),
+                strides: std::ptr::null_mut(), // Legal in v1.0
+                byte_offset: 0,
+            };
+
+            let managed = Box::into_raw(Box::new(DLManagedTensorVersioned {
+                version: DLPackVersion { major: 1, minor: 0 },
+                manager_ctx: std::ptr::null_mut(),
+                deleter: None,
+                flags: 0,
+                dl_tensor,
+            }));
+
+            let capsule = unsafe {
+                Bound::from_owned_ptr_or_err(py, pyo3::ffi::PyCapsule_New(
+                    managed.cast(),
+                    DLTENSOR_VERSIONED_NAME.as_ptr(),
+                    None,
+                ))?.cast_into_unchecked::<PyCapsule>()
+            };
+
+            let result = DLPackTensor::try_from(&capsule);
+            assert!(result.is_ok(), "Legacy v1.0 tensors should permit NULL strides");
+            
+            Ok(())
+        })
+    }
 }

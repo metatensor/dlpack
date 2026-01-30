@@ -166,6 +166,14 @@ impl sys::DLDevice {
             device_id,
         }
     }
+
+    /// Get an AWS Trainium device (kDLTrn) with the given `device_id`.
+    pub const fn trn(device_id: i32) -> Self {
+        Self {
+            device_type: sys::DLDeviceType::kDLTrn,
+            device_id,
+        }
+    }
 }
 
 /// A managed DLPack tensor, carrying ownership of the data.

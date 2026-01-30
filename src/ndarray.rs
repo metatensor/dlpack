@@ -114,19 +114,15 @@ impl<'a, T, D> TryFrom<DLPackTensorRef<'a>> for ndarray::ArrayView<'a, T, D> whe
         let shape = tensor.shape().iter().map(|&s| s as usize).collect::<Vec<_>>();
         let shape = <D as DimFromVec>::dim_from_vec(shape)?;
 
-        let array;
-        if let Some(strides) = DLPackTensorRef::strides(&tensor) {
-            let strides = strides.iter().map(|&s| s as usize).collect::<Vec<_>>();
-            let strides = <D as DimFromVec>::dim_from_vec(strides)?;
-            let shape = shape.strides(strides);
-            array = unsafe {
-                ndarray::ArrayView::<T, _>::from_shape_ptr(shape, ptr)
-            };
-        } else {
-            array = unsafe {
-                ndarray::ArrayView::<T, _>::from_shape_ptr(shape, ptr)
-            };
-        }
+        let array = match DLPackTensorRef::strides(&tensor) {
+            Some(strides) =>{
+                let s_vec = strides.iter().map(|&s| s as usize).collect::<Vec<_>>();
+                let dim_strides = <D as DimFromVec>::dim_from_vec(s_vec)?;
+                let shape = shape.strides(dim_strides);
+                unsafe { ndarray::ArrayView::from_shape_ptr(shape, ptr) }
+            }
+            None => unsafe { ndarray::ArrayView::from_shape_ptr(shape, ptr) }
+        };
 
         return Ok(array);
     }
