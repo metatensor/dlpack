@@ -33,6 +33,141 @@ pub use self::data_types::GetDLPackDataType;
 pub use self::data_types::CastError;
 use self::data_types::DLPackPointerCast;
 
+impl sys::DLPackVersion {
+    /// Returns the DLPack version supported by this library.
+    pub const fn current() -> Self {
+        Self {
+            major: sys::DLPACK_MAJOR_VERSION,
+            minor: sys::DLPACK_MINOR_VERSION,
+        }
+    }
+}
+
+impl sys::DLDevice {
+    /// Get a CPU device (kDLCPU), the `device_id` is always 0.
+    pub const fn cpu() -> Self {
+        Self {
+            device_type: sys::DLDeviceType::kDLCPU,
+            device_id: 0,
+        }
+    }
+
+    /// Get a CUDA GPU device (kDLCUDA) with the given `device_id`.
+    pub const fn cuda(device_id: i32) -> Self {
+        Self {
+            device_type: sys::DLDeviceType::kDLCUDA,
+            device_id,
+        }
+    }
+
+    /// Get a pinned CUDA CPU memory device (kDLCUDAHost) allocated by `cudaMallocHost`.
+    pub const fn cuda_host() -> Self {
+        Self {
+            device_type: sys::DLDeviceType::kDLCUDAHost,
+            device_id: 0,
+        }
+    }
+
+    /// Get an OpenCL device (kDLOpenCL) with the given `device_id`.
+    pub const fn opencl(device_id: i32) -> Self {
+        Self {
+            device_type: sys::DLDeviceType::kDLOpenCL,
+            device_id,
+        }
+    }
+
+    /// Get a Vulkan device (kDLVulkan) with the given `device_id` for next generation graphics.
+    pub const fn vulkan(device_id: i32) -> Self {
+        Self {
+            device_type: sys::DLDeviceType::kDLVulkan,
+            device_id,
+        }
+    }
+
+    /// Get a Metal device (kDLMetal) with the given `device_id` for Apple GPUs.
+    pub const fn metal(device_id: i32) -> Self {
+        Self {
+            device_type: sys::DLDeviceType::kDLMetal,
+            device_id,
+        }
+    }
+
+    /// Get a VPI device (kDLVPI) with the given `device_id` for Verilog simulator buffers.
+    pub const fn vpi(device_id: i32) -> Self {
+        Self {
+            device_type: sys::DLDeviceType::kDLVPI,
+            device_id,
+        }
+    }
+
+    /// Get a ROCm device (kDLROCM) with the given `device_id` for AMD GPUs.
+    pub const fn rocm(device_id: i32) -> Self {
+        Self {
+            device_type: sys::DLDeviceType::kDLROCM,
+            device_id,
+        }
+    }
+
+    /// Get a pinned ROCm CPU memory device (kDLROCMHost) allocated by `hipMallocHost`.
+    pub const fn rocm_host() -> Self {
+        Self {
+            device_type: sys::DLDeviceType::kDLROCMHost,
+            device_id: 0,
+        }
+    }
+
+    /// Get a reserved extension device (kDLExtDev) with the given `device_id`.
+    pub const fn ext_dev(device_id: i32) -> Self {
+        Self {
+            device_type: sys::DLDeviceType::kDLExtDev,
+            device_id,
+        }
+    }
+
+    /// Get a CUDA managed/unified memory device (kDLCUDAManaged) allocated by
+    /// `cudaMallocManaged`, the `device_id` is always 0.
+    pub const fn cuda_managed() -> Self {
+        Self {
+            device_type: sys::DLDeviceType::kDLCUDAManaged,
+            device_id: 0,
+        }
+    }
+
+    /// Get a oneAPI device (kDLOneAPI) for unified shared memory on a
+    /// non-partitioned device, the `device_id` is always 0.
+    pub const fn oneapi() -> Self {
+        Self {
+            device_type: sys::DLDeviceType::kDLOneAPI,
+            device_id: 0,
+        }
+    }
+
+    /// Get a WebGPU device (kDLWebGPU) with the given `device_id` for the next
+    /// generation standard.
+    pub const fn webgpu(device_id: i32) -> Self {
+        Self {
+            device_type: sys::DLDeviceType::kDLWebGPU,
+            device_id,
+        }
+    }
+
+    /// Get a Qualcomm Hexagon DSP device (kDLHexagon) with the given `device_id`.
+    pub const fn hexagon(device_id: i32) -> Self {
+        Self {
+            device_type: sys::DLDeviceType::kDLHexagon,
+            device_id,
+        }
+    }
+
+    /// Get a Microsoft MAIA device (kDLMAIA) with the given `device_id`.
+    pub const fn maia(device_id: i32) -> Self {
+        Self {
+            device_type: sys::DLDeviceType::kDLMAIA,
+            device_id,
+        }
+    }
+}
+
 /// A managed DLPack tensor, carrying ownership of the data.
 ///
 /// Convertion from and to other array types is handled though the different
