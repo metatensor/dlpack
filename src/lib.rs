@@ -44,7 +44,7 @@ impl sys::DLPackVersion {
 }
 
 impl sys::DLDevice {
-    /// Get a CPU device (1), the `device_id` is always 0.
+    /// Get a CPU device (kDLCPU), the `device_id` is always 0.
     pub const fn cpu() -> Self {
         Self {
             device_type: sys::DLDeviceType::kDLCPU,
@@ -52,7 +52,7 @@ impl sys::DLDevice {
         }
     }
 
-    /// Get a CUDA GPU device (2) with the given `device_id`.
+    /// Get a CUDA GPU device (kDLCUDA) with the given `device_id`.
     pub const fn cuda(device_id: i32) -> Self {
         Self {
             device_type: sys::DLDeviceType::kDLCUDA,
@@ -60,7 +60,7 @@ impl sys::DLDevice {
         }
     }
 
-    /// Get a pinned CUDA CPU memory device (3) allocated by `cudaMallocHost`.
+    /// Get a pinned CUDA CPU memory device (kDLCUDAHost) allocated by `cudaMallocHost`.
     pub const fn cuda_host() -> Self {
         Self {
             device_type: sys::DLDeviceType::kDLCUDAHost,
@@ -68,7 +68,7 @@ impl sys::DLDevice {
         }
     }
 
-    /// Get an OpenCL device (4) with the given `device_id`.
+    /// Get an OpenCL device (kDLOpenCL) with the given `device_id`.
     pub const fn opencl(device_id: i32) -> Self {
         Self {
             device_type: sys::DLDeviceType::kDLOpenCL,
@@ -76,7 +76,7 @@ impl sys::DLDevice {
         }
     }
 
-    /// Get a Vulkan device (7) with the given `device_id` for next generation graphics.
+    /// Get a Vulkan device (kDLVulkan) with the given `device_id` for next generation graphics.
     pub const fn vulkan(device_id: i32) -> Self {
         Self {
             device_type: sys::DLDeviceType::kDLVulkan,
@@ -84,7 +84,7 @@ impl sys::DLDevice {
         }
     }
 
-    /// Get a Metal device (8) with the given `device_id` for Apple GPUs.
+    /// Get a Metal device (kDLMetal) with the given `device_id` for Apple GPUs.
     pub const fn metal(device_id: i32) -> Self {
         Self {
             device_type: sys::DLDeviceType::kDLMetal,
@@ -92,7 +92,7 @@ impl sys::DLDevice {
         }
     }
 
-    /// Get a VPI device (9) with the given `device_id` for Verilog simulator buffers.
+    /// Get a VPI device (kDLVPI) with the given `device_id` for Verilog simulator buffers.
     pub const fn vpi(device_id: i32) -> Self {
         Self {
             device_type: sys::DLDeviceType::kDLVPI,
@@ -100,7 +100,7 @@ impl sys::DLDevice {
         }
     }
 
-    /// Get a ROCm device (10) with the given `device_id` for AMD GPUs.
+    /// Get a ROCm device (kDLROCM) with the given `device_id` for AMD GPUs.
     pub const fn rocm(device_id: i32) -> Self {
         Self {
             device_type: sys::DLDeviceType::kDLROCM,
@@ -108,7 +108,7 @@ impl sys::DLDevice {
         }
     }
 
-    /// Get a pinned ROCm CPU memory device (11) allocated by `hipMallocHost`.
+    /// Get a pinned ROCm CPU memory device (kDLROCMHost) allocated by `hipMallocHost`.
     pub const fn rocm_host() -> Self {
         Self {
             device_type: sys::DLDeviceType::kDLROCMHost,
@@ -116,7 +116,7 @@ impl sys::DLDevice {
         }
     }
 
-    /// Get a reserved extension device (12) with the given `device_id`.
+    /// Get a reserved extension device (kDLExtDev) with the given `device_id`.
     pub const fn ext_dev(device_id: i32) -> Self {
         Self {
             device_type: sys::DLDeviceType::kDLExtDev,
@@ -124,7 +124,7 @@ impl sys::DLDevice {
         }
     }
 
-    /// Get a CUDA managed/unified memory device (13) allocated by
+    /// Get a CUDA managed/unified memory device (kDLCUDAManaged) allocated by
     /// `cudaMallocManaged`, the `device_id` is always 0.
     pub const fn cuda_managed() -> Self {
         Self {
@@ -133,8 +133,8 @@ impl sys::DLDevice {
         }
     }
 
-    /// Get a oneAPI device (14) for unified shared memory on a non-partitioned
-    /// device, the `device_id` is always 0.
+    /// Get a oneAPI device (kDLOneAPI) for unified shared memory on a
+    /// non-partitioned device, the `device_id` is always 0.
     pub const fn oneapi() -> Self {
         Self {
             device_type: sys::DLDeviceType::kDLOneAPI,
@@ -142,7 +142,8 @@ impl sys::DLDevice {
         }
     }
 
-    /// Get a WebGPU device (15) with the given `device_id` for the next generation standard.
+    /// Get a WebGPU device (kDLWebGPU) with the given `device_id` for the next
+    /// generation standard.
     pub const fn webgpu(device_id: i32) -> Self {
         Self {
             device_type: sys::DLDeviceType::kDLWebGPU,
@@ -150,7 +151,7 @@ impl sys::DLDevice {
         }
     }
 
-    /// Get a Qualcomm Hexagon DSP device (16) with the given `device_id`.
+    /// Get a Qualcomm Hexagon DSP device (kDLHexagon) with the given `device_id`.
     pub const fn hexagon(device_id: i32) -> Self {
         Self {
             device_type: sys::DLDeviceType::kDLHexagon,
@@ -158,7 +159,7 @@ impl sys::DLDevice {
         }
     }
 
-    /// Get a Microsoft MAIA device (17) with the given `device_id`.
+    /// Get a Microsoft MAIA device (kDLMAIA) with the given `device_id`.
     pub const fn maia(device_id: i32) -> Self {
         Self {
             device_type: sys::DLDeviceType::kDLMAIA,
