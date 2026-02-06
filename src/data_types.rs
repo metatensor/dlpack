@@ -75,6 +75,9 @@ impl_dlpack_pointer_cast!(DLDataTypeCode::kDLInt, i8, i16, i32, i64,);
 impl_dlpack_pointer_cast!(DLDataTypeCode::kDLFloat, f32, f64,);
 impl_dlpack_pointer_cast!(DLDataTypeCode::kDLBool, bool,);
 
+#[cfg(feature = "half")]
+impl_dlpack_pointer_cast!(DLDataTypeCode::kDLFloat, half::f16,);
+
 macro_rules! impl_dlpack_pointer_cast_complex {
     ($dlpack_code: expr, $($type: ty),+, ) => {
         $(impl DLPackPointerCast for [$type; 2] {
@@ -133,6 +136,9 @@ impl_get_dlpack_data_type!(DLDataTypeCode::kDLUInt, u8, u16, u32, u64,);
 impl_get_dlpack_data_type!(DLDataTypeCode::kDLInt, i8, i16, i32, i64,);
 impl_get_dlpack_data_type!(DLDataTypeCode::kDLFloat, f32, f64,);
 impl_get_dlpack_data_type!(DLDataTypeCode::kDLBool, bool,);
+
+#[cfg(feature = "half")]
+impl_get_dlpack_data_type!(DLDataTypeCode::kDLFloat, half::f16,);
 
 macro_rules! impl_get_dlpack_data_type_complex {
     ($dlpack_code: expr, $($type: ty),+, ) => {
@@ -237,5 +243,21 @@ mod tests {
         // complex128 check
         assert_eq!(size_of::<[f64; 2]>() * 8, 128);
         assert_eq!(<[f64; 2]>::get_dlpack_data_type().bits, 128);
+    }
+
+    #[test]
+    #[cfg(feature = "half")]
+    fn test_half_precision() {
+        // Test that half::f16 correctly maps to kDLFloat with 16 bits
+        let dtype = half::f16::get_dlpack_data_type();
+        assert_eq!(dtype.code, DLDataTypeCode::kDLFloat);
+        assert_eq!(dtype.bits, 16);
+
+        let value = half::f16::from_f32(1.5);
+        let mut mock_data = value;
+        let ptr = &mut mock_data as *mut half::f16 as *mut std::os::raw::c_void;
+
+        let result = half::f16::dlpack_ptr_cast(ptr, dtype);
+        assert!(result.is_ok());
     }
 }
