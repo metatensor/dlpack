@@ -280,8 +280,15 @@ impl DLPackTensor {
     pub fn as_mut(&mut self) -> DLPackTensorRefMut<'_> {
         unsafe {
             // only if NOT read only + unique
-            assert!(self.raw.as_ref().flags & sys::DLPACK_FLAG_BITMASK_IS_COPIED == 0, "Can not create a mutable reference to a borrowed tensor");
-            assert!(self.raw.as_ref().flags & sys::DLPACK_FLAG_BITMASK_READ_ONLY != 0, "Can not create a mutable reference to a read-only tensor");
+            let flags = self.raw.as_ref().flags;
+            let is_unique = flags & sys::DLPACK_FLAG_BITMASK_IS_COPIED != 0;
+            let is_readonly = flags & sys::DLPACK_FLAG_BITMASK_READ_ONLY != 0;
+
+            match (is_unique, is_readonly) {
+                (true, false) => (), // Valid: Unique and Writable
+                (false, _) => panic!("Mutation failed: tensor is borrowed/shared (missing IS_COPIED flag)"),
+                (_, true) => panic!("Mutation failed: tensor is explicitly marked READ_ONLY"),
+            }
 
             // SAFETY: we are constaining the returned reference lifetime
             DLPackTensorRefMut::from_raw(self.raw.as_ref().dl_tensor.clone())
