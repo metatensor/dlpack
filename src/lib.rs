@@ -31,7 +31,7 @@ mod data_types;
 pub use self::data_types::GetDLPackDataType;
 
 pub use self::data_types::CastError;
-use self::data_types::DLPackPointerCast;
+pub use self::data_types::DLPackPointerCast;
 
 impl sys::DLPackVersion {
     /// Returns the DLPack version supported by this library.

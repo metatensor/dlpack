@@ -47,7 +47,17 @@ macro_rules! impl_dlpack_pointer_cast {
     ($dlpack_code: expr, $($type: ty),+, ) => {
         $(impl DLPackPointerCast for $type {
             fn dlpack_ptr_cast(ptr: *mut std::os::raw::c_void, data_type: DLDataType) -> Result<*mut Self, CastError> {
-                if (data_type.bits as usize) != 8 * ::std::mem::size_of::<$type>() || data_type.code != $dlpack_code {
+                let size_matches = (data_type.bits as usize) == 8 * ::std::mem::size_of::<$type>();
+                let code_matches = data_type.code == $dlpack_code;
+
+                // Allow storage aliases: u8 for Bool, u16 for Float16
+                let is_alias = match (stringify!($type), data_type.code) {
+                    ("u8", DLDataTypeCode::kDLBool) => true,
+                    ("u16", DLDataTypeCode::kDLFloat) => true,
+                    _ => false,
+                };
+
+                if !size_matches || (!code_matches && !is_alias) {
                     return Err(CastError::WrongType { dl_type: data_type, rust_type: stringify!($type)});
                 }
 
@@ -75,6 +85,39 @@ impl_dlpack_pointer_cast!(DLDataTypeCode::kDLInt, i8, i16, i32, i64,);
 impl_dlpack_pointer_cast!(DLDataTypeCode::kDLFloat, f32, f64,);
 impl_dlpack_pointer_cast!(DLDataTypeCode::kDLBool, bool,);
 
+macro_rules! impl_dlpack_pointer_cast_complex {
+    ($dlpack_code: expr, $($type: ty),+, ) => {
+        $(impl DLPackPointerCast for [$type; 2] {
+            fn dlpack_ptr_cast(ptr: *mut std::os::raw::c_void, data_type: DLDataType) -> Result<*mut Self, CastError> {
+                // For complex types, the DLPack bits represent the total size (real + imag).
+                // So [f32; 2] corresponds to kDLComplex with 64 bits.
+                let expected_bits = 8 * ::std::mem::size_of::<Self>();
+                
+                if (data_type.bits as usize) != expected_bits || data_type.code != $dlpack_code {
+                    return Err(CastError::WrongType { dl_type: data_type, rust_type: stringify!([$type; 2])});
+                }
+
+                if data_type.lanes != 1 {
+                    return Err(CastError::Lanes { expected: 1, given: data_type.lanes as usize });
+                }
+
+                let ptr = ptr.cast::<Self>();
+                if !ptr_is_aligned(ptr) {
+                    return Err(CastError::BadAlignment {
+                        ptr: ptr as usize,
+                        align: ::std::mem::align_of::<Self>(),
+                        rust_type: stringify!([$type; 2]),
+                    });
+                }
+
+                return Ok(ptr);
+            }
+        })+
+    };
+}
+
+impl_dlpack_pointer_cast_complex!(DLDataTypeCode::kDLComplex, f32, f64,);
+
 
 /// Trait to get the DLPack datatype corresponding to a Rust datatype
 #[allow(dead_code)]
@@ -100,6 +143,23 @@ impl_get_dlpack_data_type!(DLDataTypeCode::kDLUInt, u8, u16, u32, u64,);
 impl_get_dlpack_data_type!(DLDataTypeCode::kDLInt, i8, i16, i32, i64,);
 impl_get_dlpack_data_type!(DLDataTypeCode::kDLFloat, f32, f64,);
 impl_get_dlpack_data_type!(DLDataTypeCode::kDLBool, bool,);
+
+macro_rules! impl_get_dlpack_data_type_complex {
+    ($dlpack_code: expr, $($type: ty),+, ) => {
+        $(impl GetDLPackDataType for [$type; 2] {
+            fn get_dlpack_data_type() -> DLDataType {
+                DLDataType {
+                    code: $dlpack_code,
+                    // size_of::<[f32; 2]> is 8 bytes, so 8 * 8 = 64 bits
+                    bits: (8 * std::mem::size_of::<Self>()).try_into().expect("failed to convert type size to u8"),
+                    lanes: 1,
+                }
+            }
+        })+
+    };
+}
+
+impl_get_dlpack_data_type_complex!(DLDataTypeCode::kDLComplex, f32, f64,);
 
 #[cfg(test)]
 mod tests {
@@ -174,5 +234,18 @@ mod tests {
         } else {
             panic!("Expected a BadAlignment error");
         }
+    }
+
+    #[test]
+    fn test_complex_mapping_consistency() {
+        use std::mem::size_of;
+
+        // complex64 check
+        assert_eq!(size_of::<[f32; 2]>() * 8, 64);
+        assert_eq!(<[f32; 2]>::get_dlpack_data_type().bits, 64);
+
+        // complex128 check
+        assert_eq!(size_of::<[f64; 2]>() * 8, 128);
+        assert_eq!(<[f64; 2]>::get_dlpack_data_type().bits, 128);
     }
 }
