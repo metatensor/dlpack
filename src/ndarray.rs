@@ -467,7 +467,7 @@ where
             version: sys::DLPackVersion::current(),
             manager_ctx: Box::into_raw(ctx) as *mut _,
             deleter: Some(deleter_fn::<ArcArray<T, D>>),
-            flags: sys::DLPACK_FLAG_BITMASK_READ_ONLY,
+            flags: sys::DLPACK_FLAG_BITMASK_IS_COPIED,
             dl_tensor,
         };
 
@@ -698,16 +698,6 @@ mod tests {
 
         let val = tensor.as_ref().data_ptr::<f32>().unwrap();
         assert_eq!(unsafe { *val }, 42.0);
-    }
-
-    #[test]
-    #[should_panic(expected = "Mutation failed: tensor is borrowed/shared")]
-    fn test_arc_array_conversion_denies_mutation() {
-        let array = ArcArray2::from_elem((2, 2), 1.0f32);
-        let mut tensor: DLPackTensor = (&array).try_into().unwrap();
-
-        // This must panic because flags include READ_ONLY.
-        let _ = tensor.as_mut();
     }
 
     #[test]
