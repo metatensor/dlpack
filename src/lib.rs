@@ -279,12 +279,20 @@ impl DLPackTensor {
 
     /// Get a mutable DLPack tensor reference from this owned tensor
     pub fn as_mut(&mut self) -> DLPackTensorRefMut<'_> {
-        unsafe {
-            // only if NOT read only + unique
-            assert!(self.raw.as_ref().flags & sys::DLPACK_FLAG_BITMASK_IS_COPIED == 0, "Can not create a mutable reference to a borrowed tensor");
-            assert!(self.raw.as_ref().flags & sys::DLPACK_FLAG_BITMASK_READ_ONLY != 0, "Can not create a mutable reference to a read-only tensor");
+        if self.is_read_only() {
+            panic!("Can not get a `DLPackTensorRefMut`: tensor is explicitly marked READ_ONLY");
+        }
 
-            // SAFETY: we are constaining the returned reference lifetime
+        // FIXME: ideally we should also check the IS_COPIED/IS_OWNED bit to
+        // ensure that we are the unique owner of the tensor, but some libraries
+        // (e.g. PyTorch) don't set this bit correctly, so for now we just
+        // ignore it and let the user deal with potential issues if they mutate
+        // a non-unique tensor.
+
+        unsafe {
+            // SAFETY: we are constraining the returned reference lifetime
+            // the caller must ensure that the uniqueness check doesn't apply
+            // i.e. they're fine mutating an ArcArray with refcount > 1
             DLPackTensorRefMut::from_raw(self.raw.as_ref().dl_tensor.clone())
         }
     }
@@ -332,6 +340,27 @@ impl DLPackTensor {
             }
             return Some(std::slice::from_raw_parts(self.raw.as_ref().dl_tensor.strides, self.n_dims()));
         }
+    }
+
+    /// Get the raw flags bitfield.
+    pub fn flags(&self) -> u64 {
+        unsafe { self.raw.as_ref().flags }
+    }
+
+    /// Check if the tensor is explicitly marked as read-only.
+    pub fn is_read_only(&self) -> bool {
+        self.flags() & sys::DLPACK_FLAG_BITMASK_READ_ONLY != 0
+    }
+
+    /// Check if the tensor is unique/owned (IS_COPIED bit).
+    pub fn is_copied(&self) -> bool {
+        self.flags() & sys::DLPACK_FLAG_BITMASK_IS_COPIED != 0
+    }
+
+    /// Check if the sub-byte types (fp4, fp6) are padded to the next byte, or
+    /// packed together.
+    pub fn is_subbyte_type_padded(&self) -> bool {
+        self.flags() & sys::DLPACK_FLAG_BITMASK_IS_SUBBYTE_TYPE_PADDED != 0
     }
 
     /// Get the byte offset of this tensor, i.e. how many bytes should be added
