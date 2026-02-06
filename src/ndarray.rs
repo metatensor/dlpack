@@ -4,6 +4,7 @@
 //! The following conversions are supported:
 //!
 //! - `DLPackTensor` => `ndarray::Array` (makes a copy of the data)
+//! - `DLPackTensor` => `ndarray::ArcArray` (makes a copy of the data)
 //! - `DLPackTensorRef` => `ndarray::ArrayView`
 //! - `DLPackTensorRefMut` => `ndarray::ArrayViewMut`
 //! - `ndarray::Array` => `DLPackTensor`
@@ -11,7 +12,8 @@
 //! - `&mut ndarray::Array` => `DLPackTensorRefMut`
 //! - `ndarray::ArrayView` => `DLPackTensorRef`
 //! - `ndarray::ArrayViewMut` => `DLPackTensorRefMut`
-//! - `ndarray::ArcArray` => `DLPackTensor`
+//! - `ndarray::ArcArray` => `DLPackTensor` (share data)
+//! - `&ndarray::ArcArray` => `DLPackTensorRef`
 //!
 //! # Examples
 //!
@@ -183,6 +185,22 @@ where
     }
 }
 
+/// This implementation provides a conversion from a DLPack `DLPackTensor` to an
+/// `ndarray::ArcArray`.
+///
+/// **Note:** This conversion makes a copy of the underlying tensor data.
+impl<T, D> TryFrom<DLPackTensor> for ArcArray<T, D>
+where
+    D: Dimension + DimFromVec + 'static,
+    T: DLPackPointerCast + Clone + 'static,
+{
+    type Error = DLPackNDarrayError;
+
+    fn try_from(tensor: DLPackTensor) -> Result<Self, Self::Error> {
+        let array: Array<T, D> = tensor.try_into()?;
+        Ok(array.into_shared())
+    }
+}
 
 /*****************************************************************************/
 /*                            ndarray => DLPack                              */
@@ -279,6 +297,22 @@ impl<'a, T, D> TryFrom<&'a ndarray::Array<T, D>> for DLPackTensorRef<'a> where
     }
 }
 
+impl<'a, T, D> TryFrom<&'a ArcArray<T, D>> for DLPackTensorRef<'a> where
+    D: ndarray::Dimension,
+    T: GetDLPackDataType,
+{
+    type Error = DLPackNDarrayError;
+
+    fn try_from(array: &'a ArcArray<T, D>) -> Result<Self, Self::Error> {
+        let tensor = array_to_tensor_view(array)?;
+
+        return Ok(unsafe {
+            // SAFETY: we are constraining the lifetime of the return value
+            DLPackTensorRef::from_raw(tensor)
+        });
+    }
+}
+
 impl<'a, T, D> TryFrom<&'a mut ndarray::Array<T, D>> for DLPackTensorRefMut<'a> where
     D: ndarray::Dimension,
     T: GetDLPackDataType,
@@ -335,6 +369,7 @@ impl DimFromVec for ndarray::IxDyn {
 
 // Private struct to manage the lifetime of the array and its shape/strides
 struct ManagerContext<T> {
+    #[allow(unused)]
     _array: T,
     shape: Vec<i64>,
     strides: Vec<i64>,
@@ -389,10 +424,6 @@ where
         }
     }
 }
-
-/***************************************************************************************/
-/*                            ndarray::ArcArray => DLPack                              */
-/***************************************************************************************/
 
 /// Convert a shared `ArcArray` into a `DLPackTensor`.
 /// This is ZERO-COPY: it increments the reference count of the data.
@@ -452,6 +483,7 @@ mod tests {
     use super::*;
     use crate::sys::{DLDevice, DLDeviceType, DLTensor};
     use ndarray::prelude::*;
+    use ndarray::ArcArray2;
 
     #[test]
     fn test_dlpack_to_ndarray() {
@@ -612,5 +644,42 @@ mod tests {
         let final_array: Array<f32, _> = tensor.try_into().unwrap();
 
         assert_eq!(original_array, final_array);
+    }
+
+    #[test]
+    fn test_arc_array_to_dlpack_share() {
+        let array = ArcArray2::from_shape_vec((2, 3), vec![1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0]).unwrap();
+        let ptr = array.as_ptr();
+
+        // Conversion to DLPackTensor (Owned) should share data
+        let tensor: DLPackTensor = (&array).try_into().unwrap();
+        let raw = unsafe { &tensor.raw.as_ref().dl_tensor };
+
+        assert_eq!(raw.data as *const f32, ptr);
+
+        // Convert back to Array (Copy)
+        let array_copy: Array<f32, _> = tensor.try_into().unwrap();
+        assert_eq!(array, array_copy);
+        // Pointers should differ due to copy
+        assert_ne!(array_copy.as_ptr(), ptr);
+    }
+
+    #[test]
+    fn test_dlpack_to_arc_array() {
+        let array = arr2(&[[10.0f32, 11.0], [12.0, 13.0]]);
+        let tensor: DLPackTensor = array.clone().try_into().unwrap();
+
+        let arc_array: ArcArray<f32, _> = tensor.try_into().unwrap();
+        assert_eq!(arc_array, array);
+    }
+
+    #[test]
+    fn test_arc_array_to_dlpack_ref() {
+        let array = ArcArray2::from_shape_vec((2, 2), vec![1, 2, 3, 4]).unwrap();
+        let tensor_ref: DLPackTensorRef = (&array).try_into().unwrap();
+
+        assert_eq!(tensor_ref.n_dims(), 2);
+        let shape = tensor_ref.shape();
+        assert_eq!(shape, &[2, 2]);
     }
 }
