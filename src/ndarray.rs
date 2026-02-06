@@ -198,7 +198,7 @@ where
 
     fn try_from(tensor: DLPackTensor) -> Result<Self, Self::Error> {
         let array: Array<T, D> = tensor.try_into()?;
-        Ok(array.into_shared())
+        Ok(array.into())
     }
 }
 
@@ -369,7 +369,6 @@ impl DimFromVec for ndarray::IxDyn {
 
 // Private struct to manage the lifetime of the array and its shape/strides
 struct ManagerContext<T> {
-    #[allow(unused)]
     _array: T,
     shape: Vec<i64>,
     strides: Vec<i64>,
