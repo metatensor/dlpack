@@ -11,6 +11,7 @@
 //! - `&mut ndarray::Array` => `DLPackTensorRefMut`
 //! - `ndarray::ArrayView` => `DLPackTensorRef`
 //! - `ndarray::ArrayViewMut` => `DLPackTensorRefMut`
+//! - `ndarray::ArcArray` => `DLPackTensor`
 //!
 //! # Examples
 //!
@@ -35,7 +36,8 @@
 //! let tensor_ref: DLPackTensorRef = (&array).try_into().unwrap();
 //! ```
 
-use ndarray::{Array, Dimension, ShapeBuilder};
+use std::ffi::c_void;
+use ndarray::{Array, ArcArray, Dimension, ShapeBuilder};
 
 use crate::data_types::{CastError, DLPackPointerCast, GetDLPackDataType};
 use crate::sys;
@@ -378,6 +380,87 @@ where
             version: sys::DLPackVersion::current(),
             manager_ctx: Box::into_raw(ctx) as *mut _,
             deleter: Some(deleter_fn::<Array<T, D>>),
+            flags: 0,
+            dl_tensor,
+        };
+
+        unsafe {
+            Ok(DLPackTensor::from_raw(managed_tensor))
+        }
+    }
+}
+
+/***************************************************************************************/
+/*                            ndarray::ArcArray => DLPack                              */
+/***************************************************************************************/
+
+/// Context to keep the ArcArray alive while C owns the DLTensor
+struct ArcManagerContext<T, D> 
+where D: Dimension {
+    /// This keeps the data alive via reference counting
+    #[allow(unused)] // Kept alive for the pointer
+    array: ArcArray<T, D>,
+    /// Stable heap-allocated shape/strides for the DLTensor struct
+    shape: Vec<i64>,
+    strides: Vec<i64>,
+}
+
+/// The deleter called by C when it is done with the tensor.
+/// It reconstructs the Box<ArcManagerContext> and drops it, decrementing the refcount.
+unsafe extern "C" fn deleter_arc_fn<T, D>(manager: *mut sys::DLManagedTensorVersioned)
+where
+    T: 'static,
+    D: Dimension,
+{
+    if !manager.is_null() && !(*manager).manager_ctx.is_null() {
+        let _ctx = Box::from_raw((*manager).manager_ctx as *mut ArcManagerContext<T, D>);
+        // _ctx is dropped here, releasing the Arc<T> and the Vecs
+    }
+}
+
+/// Convert a shared `ArcArray` into a `DLPackTensor`.
+/// This is ZERO-COPY: it increments the reference count of the data.
+impl<'a, T, D> TryFrom<&'a ArcArray<T, D>> for DLPackTensor
+where
+    D: Dimension,
+    T: GetDLPackDataType + 'static + Clone,
+{
+    type Error = DLPackNDarrayError;
+
+    fn try_from(array: &'a ArcArray<T, D>) -> Result<Self, Self::Error> {
+        let shared_view = array.clone();
+
+        let shape: Vec<i64> = shared_view.shape().iter().map(|&s| s as i64).collect();
+        let strides: Vec<i64> = shared_view.strides().iter().map(|&s| s as i64).collect();
+        let ndim = shape.len() as i32;
+
+        let mut ctx = Box::new(ArcManagerContext {
+            array: shared_view,
+            shape,
+            strides,
+        });
+
+        let data_ptr = ctx.array.as_ptr() as *mut c_void;
+        let shape_ptr = ctx.shape.as_mut_ptr();
+        let strides_ptr = ctx.strides.as_mut_ptr();
+
+        let dl_tensor = sys::DLTensor {
+            data: data_ptr,
+            device: sys::DLDevice {
+                device_type: sys::DLDeviceType::kDLCPU,
+                device_id: 0,
+            },
+            ndim,
+            dtype: T::get_dlpack_data_type(),
+            shape: shape_ptr,
+            strides: strides_ptr,
+            byte_offset: 0,
+        };
+
+        let managed_tensor = sys::DLManagedTensorVersioned {
+            version: sys::DLPackVersion::current(),
+            manager_ctx: Box::into_raw(ctx) as *mut _,
+            deleter: Some(deleter_arc_fn::<T, D>),
             flags: 0,
             dl_tensor,
         };
