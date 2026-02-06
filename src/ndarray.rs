@@ -414,7 +414,7 @@ where
             version: sys::DLPackVersion::current(),
             manager_ctx: Box::into_raw(ctx) as *mut _,
             deleter: Some(deleter_fn::<Array<T, D>>),
-            flags: 0,
+            flags: sys::DLPACK_FLAG_BITMASK_IS_COPIED,
             dl_tensor,
         };
 
@@ -467,7 +467,7 @@ where
             version: sys::DLPackVersion::current(),
             manager_ctx: Box::into_raw(ctx) as *mut _,
             deleter: Some(deleter_fn::<ArcArray<T, D>>),
-            flags: 0,
+            flags: sys::DLPACK_FLAG_BITMASK_IS_COPIED,
             dl_tensor,
         };
 
@@ -680,5 +680,33 @@ mod tests {
         assert_eq!(tensor_ref.n_dims(), 2);
         let shape = tensor_ref.shape();
         assert_eq!(shape, &[2, 2]);
+    }
+
+    #[test]
+    fn test_array_conversion_permits_mutation() {
+        let array = arr2(&[[1.0f32, 2.0], [3.0, 4.0]]);
+        let mut tensor: DLPackTensor = array.try_into().unwrap();
+
+        // This should not panic because flags include IS_COPIED 
+        // and do not include READ_ONLY.
+        let mut tensor_mut = tensor.as_mut();
+        let ptr = tensor_mut.data_ptr_mut::<f32>().unwrap();
+        
+        unsafe {
+            *ptr = 42.0;
+        }
+
+        let val = tensor.as_ref().data_ptr::<f32>().unwrap();
+        assert_eq!(unsafe { *val }, 42.0);
+    }
+
+    #[test]
+    fn test_arc_array_conversion_allows_readonly_access() {
+        let array = ArcArray2::from_elem((2, 2), 1.0f32);
+        let tensor: DLPackTensor = (&array).try_into().unwrap();
+
+        // Standard immutable access should remain functional.
+        let tensor_ref = tensor.as_ref();
+        assert_eq!(tensor_ref.dtype(), f32::get_dlpack_data_type());
     }
 }

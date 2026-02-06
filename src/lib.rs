@@ -278,12 +278,15 @@ impl DLPackTensor {
 
     /// Get a mutable DLPack tensor reference from this owned tensor
     pub fn as_mut(&mut self) -> DLPackTensorRefMut<'_> {
-        unsafe {
-            // only if NOT read only + unique
-            assert!(self.raw.as_ref().flags & sys::DLPACK_FLAG_BITMASK_IS_COPIED == 0, "Can not create a mutable reference to a borrowed tensor");
-            assert!(self.raw.as_ref().flags & sys::DLPACK_FLAG_BITMASK_READ_ONLY != 0, "Can not create a mutable reference to a read-only tensor");
+        if self.is_read_only() {
+            panic!("Mutation failed: tensor is explicitly marked READ_ONLY");
+        }
+        if !self.is_unique() {
+            panic!("Mutation failed: tensor is borrowed or shared (missing IS_COPIED flag)");
+        }
 
-            // SAFETY: we are constaining the returned reference lifetime
+        unsafe {
+            // SAFETY: we are constraining the returned reference lifetime
             DLPackTensorRefMut::from_raw(self.raw.as_ref().dl_tensor.clone())
         }
     }
@@ -331,6 +334,21 @@ impl DLPackTensor {
             }
             return Some(std::slice::from_raw_parts(self.raw.as_ref().dl_tensor.strides, self.n_dims()));
         }
+    }
+
+    /// Get the raw flags bitfield.
+    pub fn flags(&self) -> u64 {
+        unsafe { self.raw.as_ref().flags }
+    }
+
+    /// Check if the tensor is explicitly marked as read-only.
+    pub fn is_read_only(&self) -> bool {
+        self.flags() & sys::DLPACK_FLAG_BITMASK_READ_ONLY != 0
+    }
+
+    /// Check if the tensor is unique/owned (IS_COPIED bit).
+    pub fn is_unique(&self) -> bool {
+        self.flags() & sys::DLPACK_FLAG_BITMASK_IS_COPIED != 0
     }
 
     /// Get the byte offset of this tensor, i.e. how many bytes should be added
