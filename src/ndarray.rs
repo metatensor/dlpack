@@ -394,30 +394,6 @@ where
 /*                            ndarray::ArcArray => DLPack                              */
 /***************************************************************************************/
 
-/// Context to keep the ArcArray alive while C owns the DLTensor
-struct ArcManagerContext<T, D> 
-where D: Dimension {
-    /// This keeps the data alive via reference counting
-    #[allow(unused)] // Kept alive for the pointer
-    array: ArcArray<T, D>,
-    /// Stable heap-allocated shape/strides for the DLTensor struct
-    shape: Vec<i64>,
-    strides: Vec<i64>,
-}
-
-/// The deleter called by C when it is done with the tensor.
-/// It reconstructs the Box<ArcManagerContext> and drops it, decrementing the refcount.
-unsafe extern "C" fn deleter_arc_fn<T, D>(manager: *mut sys::DLManagedTensorVersioned)
-where
-    T: 'static,
-    D: Dimension,
-{
-    if !manager.is_null() && !(*manager).manager_ctx.is_null() {
-        let _ctx = Box::from_raw((*manager).manager_ctx as *mut ArcManagerContext<T, D>);
-        // _ctx is dropped here, releasing the Arc<T> and the Vecs
-    }
-}
-
 /// Convert a shared `ArcArray` into a `DLPackTensor`.
 /// This is ZERO-COPY: it increments the reference count of the data.
 impl<'a, T, D> TryFrom<&'a ArcArray<T, D>> for DLPackTensor
@@ -434,13 +410,13 @@ where
         let strides: Vec<i64> = shared_view.strides().iter().map(|&s| s as i64).collect();
         let ndim = shape.len() as i32;
 
-        let mut ctx = Box::new(ArcManagerContext {
-            array: shared_view,
+        let mut ctx = Box::new(ManagerContext {
+            _array: shared_view,
             shape,
             strides,
         });
 
-        let data_ptr = ctx.array.as_ptr() as *mut c_void;
+        let data_ptr = ctx._array.as_ptr() as *mut c_void;
         let shape_ptr = ctx.shape.as_mut_ptr();
         let strides_ptr = ctx.strides.as_mut_ptr();
 
@@ -460,7 +436,7 @@ where
         let managed_tensor = sys::DLManagedTensorVersioned {
             version: sys::DLPackVersion::current(),
             manager_ctx: Box::into_raw(ctx) as *mut _,
-            deleter: Some(deleter_arc_fn::<T, D>),
+            deleter: Some(deleter_fn::<ArcArray<T, D>>),
             flags: 0,
             dl_tensor,
         };
