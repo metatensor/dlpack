@@ -47,7 +47,17 @@ macro_rules! impl_dlpack_pointer_cast {
     ($dlpack_code: expr, $($type: ty),+, ) => {
         $(impl DLPackPointerCast for $type {
             fn dlpack_ptr_cast(ptr: *mut std::os::raw::c_void, data_type: DLDataType) -> Result<*mut Self, CastError> {
-                if (data_type.bits as usize) != 8 * ::std::mem::size_of::<$type>() || data_type.code != $dlpack_code {
+                let size_matches = (data_type.bits as usize) == 8 * ::std::mem::size_of::<$type>();
+                let code_matches = data_type.code == $dlpack_code;
+
+                // Allow storage aliases: u8 for Bool, u16 for Float16
+                let is_alias = match (stringify!($type), data_type.code) {
+                    ("u8", DLDataTypeCode::kDLBool) => true,
+                    ("u16", DLDataTypeCode::kDLFloat) => true,
+                    _ => false,
+                };
+
+                if !size_matches || (!code_matches && !is_alias) {
                     return Err(CastError::WrongType { dl_type: data_type, rust_type: stringify!($type)});
                 }
 
