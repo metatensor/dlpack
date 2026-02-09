@@ -38,7 +38,6 @@
 //! let tensor_ref: DLPackTensorRef = (&array).try_into().unwrap();
 //! ```
 
-use std::ffi::c_void;
 use ndarray::{Array, ArcArray, Dimension, ShapeBuilder};
 
 use crate::data_types::{CastError, DLPackPointerCast, GetDLPackDataType};
@@ -376,7 +375,7 @@ struct ManagerContext<T> {
 
 unsafe extern "C" fn deleter_fn<T>(manager: *mut sys::DLManagedTensorVersioned) {
     // Reconstruct the box and drop it, freeing the memory.
-    let ctx = (*manager).manager_ctx as *mut ManagerContext<T>;
+    let ctx = (*manager).manager_ctx.cast::<ManagerContext<T>>();
     let _ = Box::from_raw(ctx);
 }
 
@@ -398,7 +397,11 @@ where
         });
 
         let dl_tensor = sys::DLTensor {
-            data: ctx._array.as_ptr() as *mut _,
+            // Casting to a mut pointer is not necessarily safe, but is required
+            // by DLPack. The data can be mutated through this pointer, we
+            // should try to find a way to make this work in Rust type system in
+            // the future.
+            data: ctx._array.as_ptr().cast_mut().cast(),
             device: sys::DLDevice {
                 device_type: sys::DLDeviceType::kDLCPU,
                 device_id: 0,
@@ -412,7 +415,7 @@ where
 
         let managed_tensor = sys::DLManagedTensorVersioned {
             version: sys::DLPackVersion::current(),
-            manager_ctx: Box::into_raw(ctx) as *mut _,
+            manager_ctx: Box::into_raw(ctx).cast(),
             deleter: Some(deleter_fn::<Array<T, D>>),
             flags: 0,
             dl_tensor,
@@ -446,26 +449,24 @@ where
             strides,
         });
 
-        let data_ptr = ctx._array.as_ptr() as *mut c_void;
-        let shape_ptr = ctx.shape.as_mut_ptr();
-        let strides_ptr = ctx.strides.as_mut_ptr();
 
         let dl_tensor = sys::DLTensor {
-            data: data_ptr,
+            // Same as above, casting to a mut pointer is not necessarily safe.
+            data: ctx._array.as_ptr().cast_mut().cast(),
             device: sys::DLDevice {
                 device_type: sys::DLDeviceType::kDLCPU,
                 device_id: 0,
             },
             ndim,
             dtype: T::get_dlpack_data_type(),
-            shape: shape_ptr,
-            strides: strides_ptr,
+            shape: ctx.shape.as_mut_ptr(),
+            strides: ctx.strides.as_mut_ptr(),
             byte_offset: 0,
         };
 
         let managed_tensor = sys::DLManagedTensorVersioned {
             version: sys::DLPackVersion::current(),
-            manager_ctx: Box::into_raw(ctx) as *mut _,
+            manager_ctx: Box::into_raw(ctx).cast(),
             deleter: Some(deleter_fn::<ArcArray<T, D>>),
             flags: 0,
             dl_tensor,
@@ -486,12 +487,12 @@ mod tests {
 
     #[test]
     fn test_dlpack_to_ndarray() {
-        let mut data = vec![1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0];
+        let data = [1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0];
         let mut shape = vec![2i64, 3];
         let mut strides = vec![3i64, 1];
 
         let dl_tensor = DLTensor {
-            data: data.as_mut_ptr() as *mut _,
+            data: data.as_ptr().cast_mut().cast(),
             device: DLDevice {
                 device_type: DLDeviceType::kDLCPU,
                 device_id: 0,
@@ -518,7 +519,7 @@ mod tests {
         let mut strides = vec![1i64, 2];
 
         let dl_tensor = DLTensor {
-            data: data.as_mut_ptr() as *mut _,
+            data: data.as_mut_ptr().cast(),
             device: DLDevice {
                 device_type: DLDeviceType::kDLCPU,
                 device_id: 0,
@@ -544,7 +545,7 @@ mod tests {
         let mut shape = vec![1i64];
 
         let dl_tensor = DLTensor {
-            data: data.as_mut_ptr() as *mut _,
+            data: data.as_mut_ptr().cast(),
             device: DLDevice {
                 device_type: DLDeviceType::kDLCUDA,
                 device_id: 0,
@@ -587,7 +588,7 @@ mod tests {
         let mut strides = vec![3i64, 1];
 
         let dl_tensor = DLTensor {
-            data: data.as_mut_ptr() as *mut _,
+            data: data.as_mut_ptr().cast(),
             device: DLDevice {
                 device_type: DLDeviceType::kDLCPU,
                 device_id: 0,

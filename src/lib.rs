@@ -22,6 +22,7 @@
 
 
 #![allow(clippy::needless_return, clippy::redundant_field_names)]
+#![forbid(clippy::as_ptr_cast_mut, clippy::ptr_cast_constness)]
 
 use std::{ffi::c_void, ptr::NonNull};
 
@@ -350,7 +351,7 @@ impl DLPackTensor {
     /// Consumes the `DLPackTensor`, returning the underlying raw pointer.
     ///
     /// # Safety
-    /// 
+    ///
     /// The caller is responsible for managing the memory and calling the deleter
     /// when the tensor is no longer needed.
     pub fn into_raw(self) -> NonNull<sys::DLManagedTensorVersioned>{

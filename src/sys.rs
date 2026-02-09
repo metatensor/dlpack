@@ -373,7 +373,7 @@ pub struct DLManagedTensorVersioned {
 ///----------------------------------------------------------------------
 /// DLPack `__dlpack_c_exchange_api__` fast exchange protocol definitions
 ///----------------------------------------------------------------------
-
+///
 /// Request a producer library to create a new tensor.
 ///
 /// Create a new `DLManagedTensorVersioned` within the context of the producer
@@ -384,17 +384,17 @@ pub struct DLManagedTensorVersioned {
 /// # Arguments
 ///
 /// * `prototype` - The prototype DLTensor. Only the dtype, ndim, shape,
-///                 and device fields are used.
+///   and device fields are used.
 /// * `out`       - The output DLManagedTensorVersioned.
 /// * `error_ctx` - Context for `SetError`.
 /// * `SetError`  - The function to set the error.
 ///
 /// # Returns
-/// 
+///
 /// The owning DLManagedTensorVersioned* or NULL on failure.
 /// SetError is called exactly when NULL is returned (the implementer
 ///         must ensure this).
-///         
+///
 /// NOTE: - As a C function, must not thrown C++ exceptions.
 ///       - Error propagation via SetError to avoid any direct need
 ///         of Python API. Due to this `SetError` may have to ensure the GIL is
@@ -419,17 +419,17 @@ pub type DLPackManagedTensorAllocator = Option<unsafe extern "C" fn(
 /// This function is exposed by the framework through the DLPackExchangeAPI.
 ///
 /// # Arguments
-/// 
+///
 /// * `py_object` - The Python object to convert. Must have the same type
-///                 as the one the `DLPackExchangeAPI` was discovered from.
+///   as the one the `DLPackExchangeAPI` was discovered from.
 /// * `out` - The output DLManagedTensorVersioned.
-/// 
+///
 /// # Returns
-/// 
+///
 /// The owning DLManagedTensorVersioned* or NULL on failure with a
 /// Python exception set. If the data cannot be described using DLPack
 /// this should be a BufferError if possible.
-/// 
+///
 /// NOTE: - As a C function, must not thrown C++ exceptions.
 ///
 /// See also:
@@ -455,13 +455,13 @@ pub type DLPackManagedTensorFromPyObjectNoSync = Option<unsafe extern "C" fn(
 /// This function is exposed by the framework through the DLPackExchangeAPI.
 ///
 /// # Arguments
-/// 
+///
 ///  * `py_object` - The Python object to convert. Must have the same type
-///                  as the one the `DLPackExchangeAPI` was discovered from.
+///    as the one the `DLPackExchangeAPI` was discovered from.
 ///  * `out` - The output DLTensor, whose space is pre-allocated on stack.
 ///
 /// # Returns
-/// 
+///
 /// 0 on success, -1 on failure with a Python exception set.
 ///
 /// NOTE: - As a C function, must not thrown C++ exceptions.
@@ -485,15 +485,15 @@ pub type DLPackDLTensorFromPyObjectNoSync = Option<unsafe extern "C" fn(
 /// always set out_current_stream[0] to NULL.
 ///
 /// # Arguments
-/// 
+///
 /// * `device_type` - The device type.
 /// * `device_id` - The device id.
 /// * `out_current_stream` - The output current work stream.
 ///
 /// # Returns
-/// 
+///
 /// 0 on success, -1 on failure with a Python exception set.
-/// 
+///
 /// NOTE: - As a C function, must not thrown C++ exceptions.
 ///
 /// See also:
@@ -514,15 +514,15 @@ pub type DLPackCurrentWorkStream = Option<unsafe extern "C" fn(
 /// This function is exposed by the framework through the DLPackExchangeAPI.
 ///
 /// # Arguments
-/// 
+///
 /// * `tensor` - The DLManagedTensorVersioned to convert the ownership of the
-///              tensor is stolen.
+///   tensor is stolen.
 /// * `out_py_object` - The output Python object.
-/// 
+///
 /// # Returns
-/// 
+///
 /// 0 on success, -1 on failure with a Python exception set.
-/// 
+///
 /// See also:
 ///          DLPackExchangeAPI
 pub type DLPackManagedTensorToPyObjectNoSync = Option<unsafe extern "C" fn(
@@ -552,9 +552,8 @@ pub struct DLPackExchangeAPIHeader {
 ///
 /// Additionally to `__dlpack__()` we define a C function table sharable by
 ///
-/// Python implementations via `__dlpack_c_exchange_api__`.
-/// This attribute must be set on the type as a Python PyCapsule
-/// with name "dlpack_exchange_api".
+/// Python implementations via `__dlpack_c_exchange_api__`. This attribute must
+/// be set on the type as a Python PyCapsule with name "dlpack_exchange_api".
 ///
 /// A consumer library may use a pattern such as:
 ///
@@ -600,28 +599,30 @@ pub struct DLPackExchangeAPIHeader {
 /// Guidelines for leveraging DLPackExchangeAPI:
 ///
 /// There are generally two kinds of consumer needs for DLPack exchange:
-/// - N0: library support, where consumer.kernel(x, y, z) would like to run a kernel
-///       with the data from x, y, z. The consumer is also expected to run the kernel with the same
-///       stream context as the producer. For example, when x, y, z is torch.Tensor,
-///       consumer should query exchange_api->current_work_stream to get the
-///       current stream and launch the kernel with the same stream.
-///       This setup is necessary for no synchronization in kernel launch and maximum compatibility
-///       with CUDA graph capture in the producer.
-///       This is the desirable behavior for library extension support for frameworks like PyTorch.
+/// - N0: library support, where consumer.kernel(x, y, z) would like to run a
+///   kernel with the data from x, y, z. The consumer is also expected to run
+///   the kernel with the same stream context as the producer. For example, when
+///   x, y, z is torch.Tensor, consumer should query
+///   exchange_api->current_work_stream to get the current stream and launch the
+///   kernel with the same stream. This setup is necessary for no
+///   synchronization in kernel launch and maximum compatibility with CUDA graph
+///   capture in the producer. This is the desirable behavior for library
+///   extension support for frameworks like PyTorch.
 /// - N1: data ingestion and retention
 ///
-/// Note that obj.__dlpack__() API should provide useful ways for N1.
-/// The primary focus of the current DLPackExchangeAPI is to enable faster exchange N0
-/// with the support of the function pointer current_work_stream.
+/// Note that obj.__dlpack__() API should provide useful ways for N1. The
+/// primary focus of the current DLPackExchangeAPI is to enable faster exchange
+/// N0 with the support of the function pointer current_work_stream.
 ///
-/// Array/Tensor libraries should statically create and initialize this structure
-/// then return a pointer to DLPackExchangeAPI as an int value in Tensor/Array.
-/// The DLPackExchangeAPI* must stay alive throughout the lifetime of the process.
+/// Array/Tensor libraries should statically create and initialize this
+/// structure then return a pointer to DLPackExchangeAPI as an int value in
+/// Tensor/Array. The DLPackExchangeAPI* must stay alive throughout the lifetime
+/// of the process.
 ///
 /// One simple way to do so is to create a static instance of DLPackExchangeAPI
-/// within the framework and return a pointer to it. The following code
-/// shows an example to do so in C++. It should also be reasonably easy
-/// to do so in other languages.
+/// within the framework and return a pointer to it. The following code shows an
+/// example to do so in C++. It should also be reasonably easy to do so in other
+/// languages.
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
 pub struct DLPackExchangeAPI {
