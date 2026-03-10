@@ -17,7 +17,7 @@ readme = "README.md"
 keywords = ["dlpack", "deep-learning", "machine-learning"]
 
 [dependencies]
-ndarray = { version = "0.16", optional = true }
+ndarray = { version = "0.17", optional = true }
 pyo3 = { version = "0.26", optional = true }
 # 2.3 has MSRV 1.7.0
 # 2.5 has MSRV 1.81
