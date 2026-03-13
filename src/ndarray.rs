@@ -81,9 +81,15 @@ impl From<DLPackNDarrayError> for PyErr {
 impl std::fmt::Display for DLPackNDarrayError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            DLPackNDarrayError::DeviceShouldBeCpu(device) => write!(f, "can not convert from device {} (only cpu is supported)", device),
-            DLPackNDarrayError::InvalidType(error) => write!(f, "type conversion error: {}", error),
-            DLPackNDarrayError::ShapeError(error) => write!(f, "shape error: {}", error),
+            DLPackNDarrayError::DeviceShouldBeCpu(device) => {
+                write!(f, "can not convert from device {} (only cpu is supported)", device)
+            }
+            DLPackNDarrayError::InvalidType(error) => {
+                write!(f, "type conversion error: {}", error)
+            }
+            DLPackNDarrayError::ShapeError(error) => {
+                write!(f, "shape error: {}", error)
+            }
         }
     }
 }
@@ -368,7 +374,7 @@ impl DimFromVec for ndarray::IxDyn {
 
 // Private struct to manage the lifetime of the array and its shape/strides
 struct ManagerContext<T> {
-    _array: T,
+    array: T,
     shape: Vec<i64>,
     strides: Vec<i64>,
 }
@@ -391,7 +397,7 @@ where
         let strides: Vec<i64> = array.strides().iter().map(|&s| s as i64).collect();
 
         let mut ctx = Box::new(ManagerContext {
-            _array: array,
+            array,
             shape,
             strides,
         });
@@ -401,7 +407,7 @@ where
             // by DLPack. The data can be mutated through this pointer, we
             // should try to find a way to make this work in Rust type system in
             // the future.
-            data: ctx._array.as_ptr().cast_mut().cast(),
+            data: ctx.array.as_ptr().cast_mut().cast(),
             device: sys::DLDevice {
                 device_type: sys::DLDeviceType::kDLCPU,
                 device_id: 0,
@@ -444,7 +450,7 @@ where
         let ndim = shape.len() as i32;
 
         let mut ctx = Box::new(ManagerContext {
-            _array: shared_view,
+            array: shared_view,
             shape,
             strides,
         });
@@ -452,7 +458,7 @@ where
 
         let dl_tensor = sys::DLTensor {
             // Same as above, casting to a mut pointer is not necessarily safe.
-            data: ctx._array.as_ptr().cast_mut().cast(),
+            data: ctx.array.as_ptr().cast_mut().cast(),
             device: sys::DLDevice {
                 device_type: sys::DLDeviceType::kDLCPU,
                 device_id: 0,
@@ -688,11 +694,11 @@ mod tests {
         let array = arr2(&[[1.0f32, 2.0], [3.0, 4.0]]);
         let mut tensor: DLPackTensor = array.try_into().unwrap();
 
-        // This should not panic because flags include IS_COPIED 
+        // This should not panic because flags include IS_COPIED
         // and do not include READ_ONLY.
         let mut tensor_mut = tensor.as_mut();
         let ptr = tensor_mut.data_ptr_mut::<f32>().unwrap();
-        
+
         unsafe {
             *ptr = 42.0;
         }

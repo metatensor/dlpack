@@ -11,6 +11,7 @@ following cargo features:
 - `pyo3` to convert from and to Python data, following the [python specification
   for dlpack](https://dmlc.github.io/dlpack/latest/python_spec.html)
 
+Conversions to and from `std::vec::Vec` and `slice` are always enabled.
 
 ### License
 

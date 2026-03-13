@@ -12,7 +12,8 @@
 //! - [`DLPackTensorRefMut`]: a borrowed DLPack tensor (mutable)
 //!
 //! We also provide tools to convert from and to other rust types, using the
-//! `TryFrom` trait.
+//! `TryFrom` trait. Conversions to and from `std::vec::Vec` and slices are
+//! always enabled.
 //!
 //! ## Features
 //!
@@ -560,3 +561,5 @@ impl<'a> DLPackTensorRefMut<'a> {
 pub mod ndarray;
 #[cfg(feature = "pyo3")]
 pub mod pyo3;
+
+pub mod vec;
