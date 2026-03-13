@@ -1,7 +1,7 @@
 use super::sys::{DLDataType, DLDataTypeCode};
 
 /// Error that can happen when casting a DLPack pointer to a Rust pointer
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum CastError {
     WrongType { dl_type: DLDataType, rust_type: &'static str },
     Lanes { expected: usize, given: usize },
@@ -85,7 +85,7 @@ macro_rules! impl_dlpack_pointer_cast_complex {
                 // For complex types, the DLPack bits represent the total size (real + imag).
                 // So [f32; 2] corresponds to kDLComplex with 64 bits.
                 let expected_bits = 8 * ::std::mem::size_of::<Self>();
-                
+
                 if (data_type.bits as usize) != expected_bits || data_type.code != $dlpack_code {
                     return Err(CastError::WrongType { dl_type: data_type, rust_type: stringify!([$type; 2])});
                 }
