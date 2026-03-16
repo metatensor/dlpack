@@ -12,7 +12,7 @@
 //! - `&mut ndarray::Array` => `DLPackTensorRefMut`
 //! - `ndarray::ArrayView` => `DLPackTensorRef`
 //! - `ndarray::ArrayViewMut` => `DLPackTensorRefMut`
-//! - `ndarray::ArcArray` => `DLPackTensor` (share data)
+//! - `ndarray::ArcArray` => `DLPackTensor` (share data, but creates a read-only DLPackTensor)
 //! - `&ndarray::ArcArray` => `DLPackTensorRef`
 //!
 //! # Examples
@@ -38,11 +38,14 @@
 //! let tensor_ref: DLPackTensorRef = (&array).try_into().unwrap();
 //! ```
 
+#[cfg(feature = "sync")]
+pub mod sync;
+
 use ndarray::{Array, ArcArray, Dimension, ShapeBuilder};
 
-use crate::data_types::{CastError, DLPackPointerCast, GetDLPackDataType};
 use crate::sys;
 use crate::{DLPackTensor, DLPackTensorRef, DLPackTensorRefMut};
+use crate::{CastError, DLPackPointerCast, GetDLPackDataType};
 
 #[cfg(feature = "pyo3")]
 use pyo3::PyErr;
@@ -435,22 +438,20 @@ where
 
 /// Convert a shared `ArcArray` into a `DLPackTensor`.
 /// This is ZERO-COPY: it increments the reference count of the data.
-impl<'a, T, D> TryFrom<&'a ArcArray<T, D>> for DLPackTensor
+impl<T, D> TryFrom<ArcArray<T, D>> for DLPackTensor
 where
     D: Dimension,
     T: GetDLPackDataType + 'static + Clone,
 {
     type Error = DLPackNDarrayError;
 
-    fn try_from(array: &'a ArcArray<T, D>) -> Result<Self, Self::Error> {
-        let shared_view = array.clone();
-
-        let shape: Vec<i64> = shared_view.shape().iter().map(|&s| s as i64).collect();
-        let strides: Vec<i64> = shared_view.strides().iter().map(|&s| s as i64).collect();
+    fn try_from(array: ArcArray<T, D>) -> Result<Self, Self::Error> {
+        let shape: Vec<i64> = array.shape().iter().map(|&s| s as i64).collect();
+        let strides: Vec<i64> = array.strides().iter().map(|&s| s as i64).collect();
         let ndim = shape.len() as i32;
 
         let mut ctx = Box::new(ManagerContext {
-            array: shared_view,
+            array,
             shape,
             strides,
         });
@@ -474,7 +475,7 @@ where
             version: sys::DLPackVersion::current(),
             manager_ctx: Box::into_raw(ctx).cast(),
             deleter: Some(deleter_fn::<ArcArray<T, D>>),
-            flags: 0,
+            flags: sys::DLPACK_FLAG_BITMASK_READ_ONLY,
             dl_tensor,
         };
 
@@ -657,8 +658,8 @@ mod tests {
         let array = ArcArray2::from_shape_vec((2, 3), vec![1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0]).unwrap();
         let ptr = array.as_ptr();
 
-        // Conversion to DLPackTensor (Owned) should share data
-        let tensor: DLPackTensor = (&array).try_into().unwrap();
+        // Conversion to DLPackTensor should share data
+        let tensor: DLPackTensor = array.clone().try_into().unwrap();
         let raw = unsafe { &tensor.raw.as_ref().dl_tensor };
 
         assert_eq!(raw.data as *const f32, ptr);
@@ -710,7 +711,7 @@ mod tests {
     #[test]
     fn test_arc_array_conversion_allows_readonly_access() {
         let array = ArcArray2::from_elem((2, 2), 1.0f32);
-        let tensor: DLPackTensor = (&array).try_into().unwrap();
+        let tensor: DLPackTensor = array.clone().try_into().unwrap();
 
         // Standard immutable access should remain functional.
         let tensor_ref = tensor.as_ref();

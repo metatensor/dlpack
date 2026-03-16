@@ -320,8 +320,7 @@ impl TryFrom<DLPackTensor> for PyDLPack {
 
 #[cfg(test)]
 mod tests {
-    use crate::{DLPackTensor, DLPackTensorRef};
-    use crate::data_types::GetDLPackDataType;
+    use crate::{DLPackTensor, DLPackTensorRef, GetDLPackDataType};
     use crate::sys::{DLPackVersion, DLDevice, DLManagedTensorVersioned, DLTensor};
 
     use super::PyDLPack;
@@ -449,7 +448,7 @@ assert np.allclose(array, expected)
 
             let result = DLPackTensor::try_from(&capsule);
             assert!(result.is_err());
-            
+
             // Cleanup the leaked memory since the capsule didn't take ownership
             unsafe { drop(Box::from_raw(managed)); }
             Ok(())
@@ -491,7 +490,7 @@ assert np.allclose(array, expected)
 
             let result = DLPackTensor::try_from(&capsule);
             assert!(result.is_ok(), "Legacy v1.0 tensors should permit NULL strides");
-            
+
             Ok(())
         })
     }
