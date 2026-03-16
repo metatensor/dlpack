@@ -19,6 +19,8 @@ keywords = ["dlpack", "deep-learning", "machine-learning"]
 [dependencies]
 ndarray = { version = "0.17", optional = true }
 pyo3 = { version = "0.26", optional = true }
+ouroboros = { version = "0.18", optional = true }
+
 # 2.3 has MSRV 1.7.0
 # 2.5 has MSRV 1.81
 half = { version = "<2.5", optional = true }
@@ -27,3 +29,4 @@ half = { version = "<2.5", optional = true }
 ndarray = ["dep:ndarray"]
 pyo3 = ["dep:pyo3"]
 half = ["dep:half"]
+sync = ["dep:ouroboros"]

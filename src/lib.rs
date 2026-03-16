@@ -13,10 +13,13 @@
 //!
 //! We also provide tools to convert from and to other rust types, using the
 //! `TryFrom` trait. Conversions to and from `std::vec::Vec` and slices are
-//! always enabled.
+//! always enabled, in the [`vec`] module.
 //!
 //! ## Features
 //!
+//! - [`sync`]: enable sharing data behind `Arc<Mutex<_>>` and `Arc<RwLock<_>>`
+//!   with DLPack, enforcing Rust's borrowing rules at runtime through the
+//!   locks.
 //! - [`ndarray`]: enable conversion from and to `ndarray::Array`
 //! - [`pyo3`]: enable passing data from and to python, following the dlpack
 //!   protocol (the data is passed through a `PyCapsule` object).
@@ -28,7 +31,7 @@
 use std::{ffi::c_void, ptr::NonNull};
 
 pub mod sys;
-pub use self::sys::{DLDataType, DLDevice, DLDeviceType, DLPackVersion};
+pub use self::sys::{DLDataType, DLDataTypeCode, DLDevice, DLDeviceType, DLPackVersion};
 
 mod data_types;
 pub use self::data_types::GetDLPackDataType;
@@ -621,12 +624,14 @@ impl<'a> DLPackTensorRefMut<'a> {
     }
 }
 
+pub mod vec;
+
 #[cfg(feature = "ndarray")]
 pub mod ndarray;
 #[cfg(feature = "pyo3")]
 pub mod pyo3;
-
-pub mod vec;
+#[cfg(feature = "sync")]
+pub mod sync;
 
 
 #[cfg(test)]

@@ -12,12 +12,12 @@
 //! - Vec<T> -> DLPackTensor, creating a DLPack tensor which owns its data.
 //! - Box<[T]> -> DLPackTensor, creating a DLPack tensor which owns its data.
 
-use crate::data_types::{CastError, DLPackPointerCast, GetDLPackDataType};
 use crate::sys;
 use crate::{DLPackTensor, DLPackTensorRef, DLPackTensorRefMut};
+use crate::{CastError, DLPackPointerCast, GetDLPackDataType};
 
 /// Possible error causes when converting between Vec/slice and DLPack
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug)]
 pub enum DLPackVecError {
     /// We only support data which lives on CPU
     DeviceShouldBeCpu(sys::DLDevice),
@@ -47,7 +47,7 @@ impl std::error::Error for DLPackVecError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             DLPackVecError::DeviceShouldBeCpu(_) => None,
-            DLPackVecError::InvalidType(cast_error) => Some(cast_error),
+            DLPackVecError::InvalidType(e) => Some(e),
             DLPackVecError::ShapeError(_) => None,
         }
     }
@@ -236,6 +236,11 @@ mod tests {
         let tensor: DLPackTensor = data.try_into().unwrap();
 
         let err = TryInto::<Vec<f64>>::try_into(tensor).unwrap_err();
-        assert_eq!(err, DLPackVecError::ShapeError(vec![2, 2]));
+        match err {
+             DLPackVecError::ShapeError(shape) => {
+                assert_eq!(shape, [2, 2]);
+            }
+            _ => panic!("unexpected error: {}", err),
+        }
     }
 }
