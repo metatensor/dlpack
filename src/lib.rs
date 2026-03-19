@@ -28,6 +28,7 @@
 use std::{ffi::c_void, ptr::NonNull};
 
 pub mod sys;
+pub use self::sys::{DLDataType, DLDevice, DLDeviceType, DLPackVersion};
 
 mod data_types;
 pub use self::data_types::GetDLPackDataType;
@@ -35,7 +36,7 @@ pub use self::data_types::GetDLPackDataType;
 pub use self::data_types::CastError;
 pub use self::data_types::DLPackPointerCast;
 
-impl sys::DLPackVersion {
+impl DLPackVersion {
     /// Returns the DLPack version supported by this library.
     pub const fn current() -> Self {
         Self {
@@ -45,7 +46,7 @@ impl sys::DLPackVersion {
     }
 }
 
-impl sys::DLDevice {
+impl DLDevice {
     /// Get a CPU device (kDLCPU), the `device_id` is always 0.
     pub const fn cpu() -> Self {
         Self {
@@ -185,6 +186,57 @@ impl sys::DLDevice {
 #[repr(transparent)]
 pub struct DLPackTensor{
     raw: NonNull<sys::DLManagedTensorVersioned>,
+}
+
+struct DLTensorDebug<'a>(&'a sys::DLTensor);
+impl std::fmt::Debug for DLTensorDebug<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let tensor_ref = unsafe {
+            DLPackTensorRef::from_raw(self.0.clone())
+        };
+        debug_tensor(&tensor_ref, f, "DLTensor")
+    }
+}
+
+fn debug_tensor(tensor: &DLPackTensorRef<'_>, f: &mut std::fmt::Formatter<'_>, name: &str) -> std::fmt::Result {
+    f.debug_struct(name)
+            .field("data", &tensor.raw.data)
+            .field("device", &tensor.device())
+            .field("dtype", &tensor.dtype())
+            .field("shape", &tensor.shape())
+            .field("strides", &tensor.strides())
+            .field("byte_offset", &tensor.byte_offset())
+            .finish()
+}
+
+impl std::fmt::Debug for DLPackTensor {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut flags_strings = Vec::new();
+        let flags = self.flags();
+        if flags & sys::DLPACK_FLAG_BITMASK_READ_ONLY != 0 {
+            flags_strings.push("READ_ONLY");
+        }
+        if flags & sys::DLPACK_FLAG_BITMASK_IS_COPIED != 0 {
+            flags_strings.push("IS_COPIED");
+        }
+        if flags & sys::DLPACK_FLAG_BITMASK_IS_SUBBYTE_TYPE_PADDED != 0 {
+            flags_strings.push("IS_SUBBYTE_TYPE_PADDED");
+        }
+
+        let flags_string = if flags_strings.is_empty() {
+            "0".into()
+        } else {
+            flags_strings.join(" | ")
+        };
+
+        f.debug_struct("DLPackTensor")
+            .field("version", unsafe { &self.raw.as_ref().version })
+            .field("manager_ctx", unsafe { &self.raw.as_ref().manager_ctx })
+            .field("deleter", unsafe { &self.raw.as_ref().deleter })
+            .field("flags", &flags_string)
+            .field("dl_tensor", unsafe { &DLTensorDebug(&self.raw.as_ref().dl_tensor) })
+            .finish()
+    }
 }
 
 impl Drop for DLPackTensor {
@@ -399,6 +451,12 @@ pub struct DLPackTensorRef<'a> {
     phantom: std::marker::PhantomData<&'a [u8]>,
 }
 
+impl std::fmt::Debug for DLPackTensorRef<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        debug_tensor(self, f, "DLPackTensorRef")
+    }
+}
+
 impl<'a> DLPackTensorRef<'a> {
     /// Create a `DLPackTensorRef` from a raw `DLTensor`
     ///
@@ -470,6 +528,12 @@ impl<'a> DLPackTensorRef<'a> {
 pub struct DLPackTensorRefMut<'a> {
     raw: sys::DLTensor,
     phantom: std::marker::PhantomData<&'a [u8]>,
+}
+
+impl std::fmt::Debug for DLPackTensorRefMut<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        debug_tensor(&self.as_ref(), f, "DLPackTensorRef")
+    }
 }
 
 impl<'a> DLPackTensorRefMut<'a> {
@@ -563,3 +627,55 @@ pub mod ndarray;
 pub mod pyo3;
 
 pub mod vec;
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn debug() {
+        let data = vec![1, 2, 3, 4, 5];
+        let tensor: DLPackTensor = data.try_into().unwrap();
+
+        // get the pointer addresse that can change every time, so we can put it in the expected string
+        let manager_ctx = format!("{:#?}", unsafe { tensor.raw.as_ref().manager_ctx });
+        let deleter = format!("{:#?}", unsafe { tensor.raw.as_ref().deleter.unwrap() });
+        let data = format!("{:#?}", unsafe { tensor.raw.as_ref().dl_tensor.data });
+
+        let expected = format!(r#"DLPackTensor {{
+    version: DLPackVersion {{
+        major: 1,
+        minor: 3,
+    }},
+    manager_ctx: {manager_ctx},
+    deleter: Some(
+        {deleter},
+    ),
+    flags: "IS_COPIED",
+    dl_tensor: DLTensor {{
+        data: {data},
+        device: DLDevice {{
+            device_type: kDLCPU,
+            device_id: 0,
+        }},
+        dtype: DLDataType {{
+            code: kDLInt,
+            bits: 32,
+            lanes: 1,
+        }},
+        shape: [
+            5,
+        ],
+        strides: Some(
+            [
+                1,
+            ],
+        ),
+        byte_offset: 0,
+    }},
+}}"#, );
+
+        assert_eq!(format!("{:#?}", tensor), expected);
+    }
+}
