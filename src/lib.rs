@@ -382,6 +382,12 @@ impl DLPackTensor {
 
     /// Get the shape of this tensor
     pub fn shape(&self) -> &[i64] {
+        if self.n_dims() == 0 {
+            // for 0-dim tensors, the shape pointer can be null, so we should
+            // return an empty slice instead of panicking.
+            return &[];
+        }
+
         unsafe {
             assert!(!self.raw.as_ref().dl_tensor.shape.is_null());
             return std::slice::from_raw_parts(self.raw.as_ref().dl_tensor.shape, self.n_dims());
