@@ -20,6 +20,9 @@
 //! # Examples
 //!
 //! ```
+//! # #[cfg(miri)] fn main() {}
+//! # #[cfg(not(miri))]
+//! # fn main() {
 //! use pyo3::prelude::*;
 //! use pyo3::types::IntoPyDict;
 //! use pyo3::ffi::c_str;
@@ -55,6 +58,7 @@
 //!
 //!     assert_eq!(array, ndarray::arr2(&[[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]));
 //! });
+//! # }
 //! ```
 
 use crate::sys::{self, DLManagedTensorVersioned};
@@ -334,6 +338,7 @@ mod tests {
     macro_rules! test_numpy_to_ndarray_via_dlpack_dtype {
         ($test_name:ident, $rust_type:ty, $np_dtype:expr) => {
             #[test]
+            #[cfg_attr(miri, ignore)]
             fn $test_name() -> PyResult<()> {
                 Python::initialize();
                 Python::attach(|py| {
@@ -370,6 +375,7 @@ result_capsule = array.__dlpack__()
     macro_rules! test_ndarray_to_numpy_via_dlpack_dtype {
         ($test_name:ident, $rust_type:ty, $np_dtype:expr) => {
             #[test]
+            #[cfg_attr(miri, ignore)]
             fn $test_name() -> PyResult<()> {
                 Python::initialize();
                 Python::attach(|py| {
@@ -414,6 +420,7 @@ assert np.allclose(array, expected)
     test_ndarray_to_numpy_via_dlpack_dtype!(test_to_numpy_i64, i64, "int64");
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn test_null_strides_fails_conversion() -> PyResult<()> {
         Python::initialize();
         Python::attach(|py| {
@@ -456,6 +463,7 @@ assert np.allclose(array, expected)
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn test_v1_0_null_strides_allowed() -> PyResult<()> {
         Python::initialize();
         Python::attach(|py| {

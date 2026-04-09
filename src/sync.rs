@@ -24,8 +24,12 @@ struct ManagerContextMutex<T> where T: 'static {
     #[borrows(array)]
     #[covariant]
     lock: MutexGuard<'this, Vec<T>>,
-    shape: i64,
-    stride: i64,
+    // Use Box<i64> so that pointers derived via with_*_mut target heap
+    // memory rather than inline struct fields. This avoids Stacked Borrows
+    // violations when multiple with_*_mut calls each create exclusive
+    // reborrows of the ouroboros struct.
+    shape: Box<i64>,
+    stride: Box<i64>,
 }
 
 unsafe extern "C" fn mutex_deleter_fn<T>(manager: *mut sys::DLManagedTensorVersioned) where T: 'static {
@@ -41,24 +45,24 @@ impl<T> TryFrom<Arc<Mutex<Vec<T>>>> for DLPackTensor where T: GetDLPackDataType 
         let ctx = ManagerContextMutexBuilder {
             array: array,
             lock_builder: |array| { array.lock().expect("could not lock the mutex") },
-            shape: 0,
-            stride: 1,
+            shape: Box::new(0),
+            stride: Box::new(1),
         };
         let mut ctx = Box::new(ctx.build());
 
         // set the shape after acquiring the lock to avoid deadlocks
         let shape = ctx.with_lock(|lock| lock.len() as i64);
-        ctx.with_shape_mut(|v| *v = shape);
+        ctx.with_shape_mut(|v| **v = shape);
 
         // extract pointers out of the boxed context to use in the DLPack tensor
         let mut shape_ptr = std::ptr::null_mut();
         ctx.with_shape_mut(|shape| {
-            shape_ptr = shape as *mut i64;
+            shape_ptr = shape.as_mut();
         });
 
         let mut stride_ptr = std::ptr::null_mut();
         ctx.with_stride_mut(|stride| {
-            stride_ptr = stride as *mut i64;
+            stride_ptr = stride.as_mut();
         });
 
         let mut data = std::ptr::null_mut();
@@ -102,8 +106,8 @@ struct ManagerContextRwLock<T> where T: 'static {
     #[borrows(array)]
     #[covariant]
     lock: RwLockWriteGuard<'this, Vec<T>>,
-    shape: i64,
-    stride: i64,
+    shape: Box<i64>,
+    stride: Box<i64>,
 }
 
 unsafe extern "C" fn rwlock_deleter_fn<T>(manager: *mut sys::DLManagedTensorVersioned) where T: 'static {
@@ -119,24 +123,24 @@ impl<T> TryFrom<Arc<RwLock<Vec<T>>>> for DLPackTensor where T: GetDLPackDataType
         let ctx = ManagerContextRwLockBuilder {
             array: array,
             lock_builder: move |array| { array.write().expect("could not lock the rwlock") },
-            shape: 0,
-            stride: 1,
+            shape: Box::new(0),
+            stride: Box::new(1),
         };
         let mut ctx = Box::new(ctx.build());
 
         // set the shape after acquiring the lock to avoid deadlocks
         let shape = ctx.with_lock(|lock| lock.len() as i64);
-        ctx.with_shape_mut(|v| *v = shape);
+        ctx.with_shape_mut(|v| **v = shape);
 
         // extract pointers out of the boxed context to use in the DLPack tensor
         let mut shape_ptr = std::ptr::null_mut();
         ctx.with_shape_mut(|shape| {
-            shape_ptr = shape as *mut i64;
+            shape_ptr = shape.as_mut();
         });
 
         let mut stride_ptr = std::ptr::null_mut();
         ctx.with_stride_mut(|stride| {
-            stride_ptr = stride as *mut i64;
+            stride_ptr = stride.as_mut();
         });
 
         let mut data = std::ptr::null_mut();
@@ -214,5 +218,28 @@ mod tests {
 
         let lock = data.read().unwrap();
         assert_eq!(&*lock, &[1, 42, 3]);
+    }
+
+    // Last-ref tests: the tensor holds the only Arc reference, so dropping
+    // it actually deallocates the ManagerContext via the deleter function.
+
+    #[test]
+    fn test_mutex_last_arc_ref() {
+        let data = Arc::new(Mutex::new(vec![1i32, 2, 3]));
+
+        let mut tensor: DLPackTensor = data.try_into().unwrap();
+        let tensor_mut_ref = tensor.as_mut();
+        let slice: &mut [i32] = tensor_mut_ref.try_into().unwrap();
+        assert_eq!(slice, &[1, 2, 3]);
+    }
+
+    #[test]
+    fn test_rwlock_last_arc_ref() {
+        let data = Arc::new(RwLock::new(vec![1i32, 2, 3]));
+
+        let mut tensor: DLPackTensor = data.try_into().unwrap();
+        let tensor_mut_ref = tensor.as_mut();
+        let slice: &mut [i32] = tensor_mut_ref.try_into().unwrap();
+        assert_eq!(slice, &[1, 2, 3]);
     }
 }

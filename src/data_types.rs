@@ -247,6 +247,7 @@ mod tests {
 
     #[test]
     #[cfg(feature = "half")]
+    #[cfg_attr(miri, ignore)]
     fn test_half_precision() {
         // Test that half::f16 correctly maps to kDLFloat with 16 bits
         let dtype = half::f16::get_dlpack_data_type();
