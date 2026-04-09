@@ -34,3 +34,16 @@ jobs:
         run: |
           pip install numpy
           cargo test --all-features
+
+  miri:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Setup toolchain
+        run: |
+          rustup update nightly && rustup default nightly
+          rustup component add miri
+
+      - name: Run tests under miri
+        run: cargo miri test --all-features

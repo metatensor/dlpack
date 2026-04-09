@@ -125,8 +125,8 @@ impl<'a, T> TryFrom<DLPackTensorRefMut<'a>> for &'a mut [T] where T: DLPackPoint
 
 struct ManagerContext<T> {
     array: T,
-    shape: i64,
-    stride: i64,
+    shape: Box<i64>,
+    stride: Box<i64>,
 }
 
 unsafe extern "C" fn deleter_fn<T>(manager: *mut sys::DLManagedTensorVersioned) {
@@ -144,12 +144,12 @@ macro_rules! impl_try_from {
                 let len = value.len();
                 let mut ctx = Box::new(ManagerContext {
                     array: value,
-                    shape: len as i64,
-                    stride: 1,
+                    shape: Box::new(len as i64),
+                    stride: Box::new(1),
                 });
 
-                let shape_ptr = &mut ctx.shape;
-                let stride_ptr = &mut ctx.stride;
+                let shape_ptr = ctx.shape.as_mut();
+                let stride_ptr = ctx.stride.as_mut();
 
                 let dl_tensor = sys::DLTensor {
                     data: ctx.array.as_ptr().cast_mut().cast(),
