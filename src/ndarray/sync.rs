@@ -98,7 +98,7 @@ where
         let managed_tensor = sys::DLManagedTensorVersioned {
             version: sys::DLPackVersion::current(),
             manager_ctx: Box::into_raw(ctx).cast(),
-            deleter: Some(rwlock_deleter_fn::<T>),
+            deleter: Some(rwlock_deleter_fn::<Array<T, D>>),
             flags: 0,
             dl_tensor,
         };
@@ -188,7 +188,7 @@ where
         let managed_tensor = sys::DLManagedTensorVersioned {
             version: sys::DLPackVersion::current(),
             manager_ctx: Box::into_raw(ctx).cast(),
-            deleter: Some(mutex_deleter_fn::<T>),
+            deleter: Some(mutex_deleter_fn::<Array<T, D>>),
             flags: 0,
             dl_tensor,
         };
@@ -239,5 +239,30 @@ mod tests {
 
         let array = array.read().unwrap();
         assert_eq!(*array, arr2(&[[1.0, 2.0, 3.0], [4.0, 42.0, 6.0]]));
+    }
+
+    // These tests exercise the deleter with the last Arc reference, so the
+    // ManagerContext is actually deallocated (not just the Arc refcount
+    // decremented). Without the correct type parameter on the deleter function,
+    // miri catches an incorrect layout on deallocation.
+
+    #[test]
+    fn test_mutex_last_arc_ref() {
+        let array = Arc::new(Mutex::new(arr2(&[[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])));
+
+        let mut tensor: DLPackTensor = array.try_into().unwrap();
+        let tensor_mut_ref = tensor.as_mut();
+        let view: ArrayViewMutD<f64> = tensor_mut_ref.try_into().unwrap();
+        assert_eq!(view[[0, 2]], 3.0);
+    }
+
+    #[test]
+    fn test_rwlock_last_arc_ref() {
+        let array = Arc::new(RwLock::new(arr2(&[[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])));
+
+        let mut tensor: DLPackTensor = array.try_into().unwrap();
+        let tensor_mut_ref = tensor.as_mut();
+        let view: ArrayViewMutD<f64> = tensor_mut_ref.try_into().unwrap();
+        assert_eq!(view[[0, 2]], 3.0);
     }
 }
