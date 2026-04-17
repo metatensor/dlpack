@@ -18,7 +18,11 @@ keywords = ["dlpack", "deep-learning", "machine-learning"]
 
 [dependencies]
 ndarray = { version = "0.17", optional = true }
-pyo3 = { version = "0.28", optional = true }
+# Accept either 0.27 or 0.28 so downstream crates on either line can take
+# dlpk as a dep without forcing a pyo3 version conflict. 0.28 has MSRV 1.83
+# while 0.27 keeps MSRV 1.74; the MSRV CI job uses `cargo update --precise`
+# to pin to 0.27.
+pyo3 = { version = ">=0.27, <0.29", optional = true }
 ouroboros = { version = "0.18", optional = true }
 
 # 2.3 has MSRV 1.7.0
