@@ -18,7 +18,7 @@ keywords = ["dlpack", "deep-learning", "machine-learning"]
 
 [dependencies]
 ndarray = { version = "0.17", optional = true }
-pyo3 = { version = "0.26", optional = true }
+pyo3 = { version = "0.28", optional = true }
 ouroboros = { version = "0.18", optional = true }
 
 # 2.3 has MSRV 1.7.0
