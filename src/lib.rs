@@ -316,6 +316,14 @@ impl DLPackTensor {
         }
     }
 
+    /// Get the ABI version of this DLPack tensor.
+    pub fn version(&self) -> DLPackVersion {
+        let tensor_ref = unsafe {
+            self.raw.as_ref()
+        };
+        tensor_ref.version
+    }
+
     /// Get a pointer to data in this tensor. This pointer can be a device
     /// pointer according to [`DLPackTensor::device`].
     pub fn data_ptr<T>(&self) -> Result<*const T, CastError>  where T: DLPackPointerCast {
