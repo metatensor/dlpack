@@ -32,10 +32,13 @@ struct ManagerContextMutex<T> where T: 'static {
     stride: Box<i64>,
 }
 
-unsafe extern "C" fn mutex_deleter_fn<T>(manager: *mut sys::DLManagedTensorVersioned) where T: 'static {
+unsafe extern "C" fn mutex_deleter_fn<T>(tensor: *mut sys::DLManagedTensorVersioned) where T: 'static {
     // Reconstruct the box and drop it, freeing the memory.
-    let ctx = (*manager).manager_ctx.cast::<ManagerContextMutex<T>>();
+    let ctx = (*tensor).manager_ctx.cast::<ManagerContextMutex<T>>();
     let _ = Box::from_raw(ctx);
+
+    // also drop the tensor itself
+    let _ = Box::from_raw(tensor);
 }
 
 impl<T> TryFrom<Arc<Mutex<Vec<T>>>> for DLPackTensor where T: GetDLPackDataType + 'static {
@@ -86,16 +89,16 @@ impl<T> TryFrom<Arc<Mutex<Vec<T>>>> for DLPackTensor where T: GetDLPackDataType 
             byte_offset: 0,
         };
 
-        let managed_tensor = sys::DLManagedTensorVersioned {
+        let managed_tensor = Box::new(sys::DLManagedTensorVersioned {
             version: sys::DLPackVersion::current(),
             manager_ctx: Box::into_raw(ctx).cast(),
             deleter: Some(mutex_deleter_fn::<T>),
             flags: 0,
             dl_tensor,
-        };
+        });
 
         unsafe {
-            Ok(DLPackTensor::from_raw(managed_tensor))
+            Ok(DLPackTensor::from_ptr(Box::into_raw(managed_tensor)))
         }
     }
 }
@@ -110,10 +113,13 @@ struct ManagerContextRwLock<T> where T: 'static {
     stride: Box<i64>,
 }
 
-unsafe extern "C" fn rwlock_deleter_fn<T>(manager: *mut sys::DLManagedTensorVersioned) where T: 'static {
+unsafe extern "C" fn rwlock_deleter_fn<T>(tensor: *mut sys::DLManagedTensorVersioned) where T: 'static {
     // Reconstruct the box and drop it, freeing the memory.
-    let ctx = (*manager).manager_ctx.cast::<ManagerContextRwLock<T>>();
+    let ctx = (*tensor).manager_ctx.cast::<ManagerContextRwLock<T>>();
     let _ = Box::from_raw(ctx);
+
+    // also drop the tensor itself
+    let _ = Box::from_raw(tensor);
 }
 
 impl<T> TryFrom<Arc<RwLock<Vec<T>>>> for DLPackTensor where T: GetDLPackDataType + 'static {
@@ -164,16 +170,16 @@ impl<T> TryFrom<Arc<RwLock<Vec<T>>>> for DLPackTensor where T: GetDLPackDataType
             byte_offset: 0,
         };
 
-        let managed_tensor = sys::DLManagedTensorVersioned {
+        let managed_tensor = Box::new(sys::DLManagedTensorVersioned {
             version: sys::DLPackVersion::current(),
             manager_ctx: Box::into_raw(ctx).cast(),
             deleter: Some(rwlock_deleter_fn::<T>),
             flags: 0,
             dl_tensor,
-        };
+        });
 
         unsafe {
-            Ok(DLPackTensor::from_raw(managed_tensor))
+            Ok(DLPackTensor::from_ptr(Box::into_raw(managed_tensor)))
         }
     }
 }

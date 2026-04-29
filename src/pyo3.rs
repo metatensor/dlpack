@@ -235,7 +235,7 @@ impl<'py> TryFrom<&Bound<'py, PyCapsule>> for DLPackTensor {
                     return Err(PyErr::fetch(capsule.py()));
                 }
 
-                return Ok(DLPackTensor::from_ptr(pointer));
+                return Ok(DLPackTensor::from_raw(pointer));
             }
         } else {
             return Err(PyErr::new::<PyValueError, _>(
@@ -292,7 +292,7 @@ unsafe extern "C" fn rust_capsule_deleter(object: *mut pyo3::ffi::PyObject) {
     // PyCapsule_IsValid checks the the pointer is not null
     let tensor = NonNull::new(ptr.cast::<DLManagedTensorVersioned>())
         .expect("the capsule should be non-null");
-    std::mem::drop(DLPackTensor::from_ptr(tensor));
+    std::mem::drop(DLPackTensor::from_raw(tensor));
 }
 
 impl TryFrom<DLPackTensor> for PyDLPack {
