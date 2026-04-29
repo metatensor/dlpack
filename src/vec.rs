@@ -129,10 +129,13 @@ struct ManagerContext<T> {
     stride: Box<i64>,
 }
 
-unsafe extern "C" fn deleter_fn<T>(manager: *mut sys::DLManagedTensorVersioned) {
+unsafe extern "C" fn deleter_fn<T>(tensor: *mut sys::DLManagedTensorVersioned) {
     // Reconstruct the box and drop it, freeing the memory.
-    let ctx = (*manager).manager_ctx.cast::<ManagerContext<T>>();
+    let ctx = (*tensor).manager_ctx.cast::<ManagerContext<T>>();
     let _ = Box::from_raw(ctx);
+
+    // also drop the tensor itself
+    let _ = Box::from_raw(tensor);
 }
 
 macro_rules! impl_try_from {
@@ -164,16 +167,16 @@ macro_rules! impl_try_from {
                     byte_offset: 0,
                 };
 
-                let managed_tensor = sys::DLManagedTensorVersioned {
+                let managed_tensor = Box::new(sys::DLManagedTensorVersioned {
                     version: sys::DLPackVersion::current(),
                     manager_ctx: Box::into_raw(ctx).cast(),
                     deleter: Some(deleter_fn::<$Type>),
                     flags: sys::DLPACK_FLAG_BITMASK_IS_COPIED,
                     dl_tensor,
-                };
+                });
 
                 unsafe {
-                    Ok(DLPackTensor::from_raw(managed_tensor))
+                    Ok(DLPackTensor::from_ptr(Box::into_raw(managed_tensor)))
                 }
             }
         }

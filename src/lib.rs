@@ -28,7 +28,7 @@
 #![allow(clippy::needless_return, clippy::redundant_field_names)]
 #![forbid(clippy::as_ptr_cast_mut, clippy::ptr_cast_constness)]
 
-use std::{ffi::c_void, ptr::NonNull};
+use std::ptr::NonNull;
 
 pub mod sys;
 pub use self::sys::{DLDataType, DLDataTypeCode, DLDevice, DLDeviceType, DLPackVersion};
@@ -252,63 +252,26 @@ impl Drop for DLPackTensor {
     }
 }
 
-struct RustBoxedManager {
-    // tensor: std::pin::Pin<sys::DLManagedTensorVersioned>,
-    original_ctx: *mut c_void,
-    original_deleter: Option<unsafe extern "C" fn(*mut sys::DLManagedTensorVersioned) -> ()>,
-}
-
-unsafe extern "C" fn rust_boxed_manager_deleter(tensor: *mut sys::DLManagedTensorVersioned) {
-    if tensor.is_null() {
-        return;
-    }
-
-    let manager = (*tensor).manager_ctx.cast::<RustBoxedManager>();
-    assert!(!manager.is_null());
-
-    (*tensor).manager_ctx = (*manager).original_ctx;
-    (*tensor).deleter = (*manager).original_deleter;
-
-    if let Some(deleter) = (*tensor).deleter {
-        deleter(tensor);
-    }
-
-    std::mem::drop(Box::from_raw(manager));
-    std::mem::drop(Box::from_raw(tensor));
-}
-
 impl DLPackTensor {
-    /// Create a `DLPackTensor` from a raw `DLManagedTensorVersioned`.
+    /// Create a `DLPackTensor` from a pointer to `DLManagedTensorVersioned`.
     ///
     /// # Safety
     ///
     /// The `DLManagedTensorVersioned` should have a valid `deleter` that can
     /// be called from Rust, or have the deleter set to `None`.
-    pub unsafe fn from_raw(mut tensor: sys::DLManagedTensorVersioned) -> DLPackTensor {
-        // we need to move the tensor to the heap, so we need to wrap the
-        // manager_ctx and deleter into another one that will also free the
-        // tensor from the heap.
-        let manager = Box::new(RustBoxedManager {
-            original_ctx: tensor.manager_ctx,
-            original_deleter: tensor.deleter,
-        });
-        tensor.manager_ctx = Box::into_raw(manager).cast();
-        tensor.deleter = Some(rust_boxed_manager_deleter);
+    pub unsafe fn from_ptr(tensor: *mut sys::DLManagedTensorVersioned) -> DLPackTensor {
+        let tensor = NonNull::new(tensor).expect("DLManagedTensorVersioned pointer is null");
 
-        let tensor = Box::new(tensor);
-
-        return DLPackTensor{
-            raw: NonNull::new_unchecked(Box::into_raw(tensor)),
-        };
+        return DLPackTensor::from_raw(tensor);
     }
 
-    /// Create a `DLPackTensor` from a non-null pointer to `DLManagedTensorVersioned`.
+    /// Create a `DLPackTensor` from a non-null pointer to
+    /// `DLManagedTensorVersioned`.
     ///
     /// # Safety
     ///
-    /// The `DLManagedTensorVersioned` should have a valid `deleter` that can
-    /// be called from Rust, or have the deleter set to `None`.
-    pub unsafe fn from_ptr(tensor: NonNull<sys::DLManagedTensorVersioned>) -> DLPackTensor {
+    /// The same safety requirements as `from_ptr` apply.
+    pub unsafe fn from_raw(tensor: NonNull<sys::DLManagedTensorVersioned>) -> DLPackTensor {
         if tensor.as_ref().version.major != sys::DLPACK_MAJOR_VERSION {
             // from the spec, we need to call the deleter here (and it is the
             // only thing we can do)
