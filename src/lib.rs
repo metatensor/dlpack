@@ -610,6 +610,14 @@ pub mod pyo3;
 #[cfg(feature = "sync")]
 pub mod sync;
 
+/// Small wrapper type to mark a tensor as read-only when there is a choice
+/// between a read-only and a read-write implementation.
+pub struct ReadOnly<T>(pub T);
+
+/// Small wrapper type to mark a tensor as read-write when there is a choice
+/// between a read-only and a read-write implementation.
+pub struct ReadWrite<T>(pub T);
+
 
 #[cfg(test)]
 mod tests {

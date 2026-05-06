@@ -7,9 +7,12 @@
 //! The following conversions to DLPack types are supported:
 //!
 //! - `Arc<Mutex<Array<T, D>>> -> DLPackTensor`
-//! - `Arc<RwLock<Array<T, D>>> -> DLPackTensor`
+//! - `ReadOnly<Arc<RwLock<Array<T, D>>>> -> DLPackTensor`, creating a read-only
+//!   DLPack tensor and locking the `RwLock` for reading.
+//! - `ReadWrite<Arc<RwLock<Array<T, D>>>> -> DLPackTensor`, creating a
+//!   read-write DLPack tensor and locking the `RwLock` for writing.
 
-use std::sync::{Arc, Mutex, MutexGuard, RwLock, RwLockWriteGuard};
+use std::sync::{Arc, Mutex, MutexGuard, RwLock, RwLockWriteGuard, RwLockReadGuard};
 use ndarray::{Array, Dimension};
 
 use ouroboros::self_referencing;
@@ -17,11 +20,13 @@ use ouroboros::self_referencing;
 use crate::sys;
 use crate::{DLPackTensor, GetDLPackDataType};
 
+use crate::{ReadOnly, ReadWrite};
+
 use super::DLPackNDarrayError;
 
 
 #[self_referencing]
-struct ManagerContextRwLock<Array> where Array: 'static {
+struct RwLockCtxWrite<Array> where Array: 'static {
     array: Arc<RwLock<Array>>,
     #[borrows(array)]
     #[covariant]
@@ -30,24 +35,43 @@ struct ManagerContextRwLock<Array> where Array: 'static {
     strides: Vec<i64>,
 }
 
-unsafe extern "C" fn rwlock_deleter_fn<T>(tensor: *mut sys::DLManagedTensorVersioned) where T: 'static {
+#[self_referencing]
+struct RwLockCtxRead<Array> where Array: 'static {
+    array: Arc<RwLock<Array>>,
+    #[borrows(array)]
+    #[covariant]
+    lock: RwLockReadGuard<'this, Array>,
+    shape: Vec<i64>,
+    strides: Vec<i64>,
+}
+
+unsafe extern "C" fn rwlock_write_deleter_fn<T>(tensor: *mut sys::DLManagedTensorVersioned) where T: 'static {
     // Reconstruct the box and drop it, freeing the memory.
-    let ctx = (*tensor).manager_ctx.cast::<ManagerContextRwLock<T>>();
+    let ctx = (*tensor).manager_ctx.cast::<RwLockCtxWrite<T>>();
     let _ = Box::from_raw(ctx);
 
     // also drop the tensor itself
     let _ = Box::from_raw(tensor);
 }
 
-impl<T, D> TryFrom<Arc<RwLock<Array<T, D>>>> for DLPackTensor
+unsafe extern "C" fn rwlock_read_deleter_fn<T>(tensor: *mut sys::DLManagedTensorVersioned) where T: 'static {
+    // Reconstruct the box and drop it, freeing the memory.
+    let ctx = (*tensor).manager_ctx.cast::<RwLockCtxRead<T>>();
+    let _ = Box::from_raw(ctx);
+
+    // also drop the tensor itself
+    let _ = Box::from_raw(tensor);
+}
+
+impl<T, D> TryFrom<ReadWrite<Arc<RwLock<Array<T, D>>>>> for DLPackTensor
 where
     D: Dimension + 'static,
     T: GetDLPackDataType + 'static + Clone,
 {
     type Error = DLPackNDarrayError;
 
-    fn try_from(array: Arc<RwLock<Array<T, D>>>) -> Result<Self, Self::Error> {
-        let ctx = ManagerContextRwLockBuilder {
+    fn try_from(ReadWrite(array): ReadWrite<Arc<RwLock<Array<T, D>>>>) -> Result<Self, Self::Error> {
+        let ctx = RwLockCtxWriteBuilder {
             array: array,
             lock_builder: move |array| { array.write().expect("could not lock the rwlock") },
             shape: vec![],
@@ -101,7 +125,78 @@ where
         let managed_tensor = Box::new(sys::DLManagedTensorVersioned {
             version: sys::DLPackVersion::current(),
             manager_ctx: Box::into_raw(ctx).cast(),
-            deleter: Some(rwlock_deleter_fn::<Array<T, D>>),
+            deleter: Some(rwlock_write_deleter_fn::<Array<T, D>>),
+            flags: 0,
+            dl_tensor,
+        });
+
+        unsafe {
+            Ok(DLPackTensor::from_ptr(Box::into_raw(managed_tensor)))
+        }
+    }
+}
+
+impl<T, D> TryFrom<ReadOnly<Arc<RwLock<Array<T, D>>>>> for DLPackTensor
+where
+    D: Dimension + 'static,
+    T: GetDLPackDataType + 'static + Clone,
+{
+    type Error = DLPackNDarrayError;
+
+    fn try_from(ReadOnly(array): ReadOnly<Arc<RwLock<Array<T, D>>>>) -> Result<Self, Self::Error> {
+        let ctx = RwLockCtxReadBuilder {
+            array: array,
+            lock_builder: move |array| { array.read().expect("could not lock the rwlock") },
+            shape: vec![],
+            strides: vec![],
+        };
+        let mut ctx = Box::new(ctx.build());
+
+        // set the shape after acquiring the lock to avoid deadlocks
+        let (shape, strides) = ctx.with_lock(|lock| {
+            let shape: Vec<_> = lock.shape().iter().map(|&s| s as i64).collect();
+            let strides: Vec<_> = lock.strides().iter().map(|&s| s as i64).collect();
+            (shape, strides)
+        });
+        let ndim = shape.len() as i32;
+
+        ctx.with_shape_mut(|v| *v = shape);
+        ctx.with_strides_mut(|v| *v = strides);
+
+        // extract pointers out of the boxed context to use in the DLPack tensor
+        let mut shape_ptr = std::ptr::null_mut();
+        ctx.with_shape_mut(|shape| {
+            shape_ptr = shape.as_mut_ptr();
+        });
+
+        let mut stride_ptr = std::ptr::null_mut();
+        ctx.with_strides_mut(|strides| {
+            stride_ptr = strides.as_mut_ptr();
+        });
+
+        let mut data = std::ptr::null_mut();
+        ctx.with_lock_mut(|lock| {
+            // Cast mut is fine, we set the read-only flag in the DLPack tensor
+            data = lock.as_ptr().cast_mut().cast()
+        });
+
+        let dl_tensor = sys::DLTensor {
+            data: data,
+            device: sys::DLDevice {
+                device_type: sys::DLDeviceType::kDLCPU,
+                device_id: 0,
+            },
+            ndim: ndim,
+            dtype: T::get_dlpack_data_type(),
+            shape: shape_ptr,
+            strides: stride_ptr,
+            byte_offset: 0,
+        };
+
+        let managed_tensor = Box::new(sys::DLManagedTensorVersioned {
+            version: sys::DLPackVersion::current(),
+            manager_ctx: Box::into_raw(ctx).cast(),
+            deleter: Some(rwlock_read_deleter_fn::<Array<T, D>>),
             flags: 0,
             dl_tensor,
         });
@@ -114,7 +209,7 @@ where
 
 
 #[self_referencing]
-struct ManagerContextMutex<Array> where Array: 'static {
+struct MutexCtx<Array> where Array: 'static {
     array: Arc<Mutex<Array>>,
     #[borrows(array)]
     #[covariant]
@@ -125,7 +220,7 @@ struct ManagerContextMutex<Array> where Array: 'static {
 
 unsafe extern "C" fn mutex_deleter_fn<T>(tensor: *mut sys::DLManagedTensorVersioned) where T: 'static {
     // Reconstruct the box and drop it, freeing the memory.
-    let ctx = (*tensor).manager_ctx.cast::<ManagerContextMutex<T>>();
+    let ctx = (*tensor).manager_ctx.cast::<MutexCtx<T>>();
     let _ = Box::from_raw(ctx);
 
     // also drop the tensor itself
@@ -140,7 +235,7 @@ where
     type Error = DLPackNDarrayError;
 
     fn try_from(array: Arc<Mutex<Array<T, D>>>) -> Result<Self, Self::Error> {
-        let ctx = ManagerContextMutexBuilder {
+        let ctx = MutexCtxBuilder {
             array: array,
             lock_builder: move |array| { array.lock().expect("could not lock the mutex") },
             shape: vec![],
@@ -208,7 +303,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ndarray::{ArrayViewMutD, arr2};
+    use ndarray::{ArrayViewD, ArrayViewMutD, arr2};
 
     #[test]
     fn test_mutex() {
@@ -229,11 +324,11 @@ mod tests {
     }
 
     #[test]
-    fn test_rwlock() {
+    fn test_rwlock_write() {
         let array = Arc::new(RwLock::new(arr2(&[[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])));
 
         {
-            let mut tensor: DLPackTensor = Arc::clone(&array).try_into().unwrap();
+            let mut tensor: DLPackTensor = ReadWrite(Arc::clone(&array)).try_into().unwrap();
             assert!(array.try_read().is_err(), "the rwlock should be locked while the DLPackTensor exists");
             assert!(array.try_write().is_err(), "the rwlock should be locked while the DLPackTensor exists");
 
@@ -253,7 +348,7 @@ mod tests {
     // miri catches an incorrect layout on deallocation.
 
     #[test]
-    fn test_mutex_last_arc_ref() {
+    fn test_mutex_drop() {
         let array = Arc::new(Mutex::new(arr2(&[[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])));
 
         let mut tensor: DLPackTensor = array.try_into().unwrap();
@@ -263,12 +358,22 @@ mod tests {
     }
 
     #[test]
-    fn test_rwlock_last_arc_ref() {
+    fn test_rwlock_write_drop() {
         let array = Arc::new(RwLock::new(arr2(&[[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])));
 
-        let mut tensor: DLPackTensor = array.try_into().unwrap();
+        let mut tensor: DLPackTensor = ReadWrite(Arc::clone(&array)).try_into().unwrap();
         let tensor_mut_ref = tensor.as_mut();
         let view: ArrayViewMutD<f64> = tensor_mut_ref.try_into().unwrap();
+        assert_eq!(view[[0, 2]], 3.0);
+    }
+
+    #[test]
+    fn test_rwlock_read_drop() {
+        let array = Arc::new(RwLock::new(arr2(&[[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])));
+
+        let tensor: DLPackTensor = ReadOnly(Arc::clone(&array)).try_into().unwrap();
+        let tensor_ref = tensor.as_ref();
+        let view: ArrayViewD<f64> = tensor_ref.try_into().unwrap();
         assert_eq!(view[[0, 2]], 3.0);
     }
 }
