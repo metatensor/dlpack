@@ -73,7 +73,7 @@ where
     fn try_from(ReadWrite(array): ReadWrite<Arc<RwLock<Array<T, D>>>>) -> Result<Self, Self::Error> {
         let ctx = RwLockCtxWriteBuilder {
             array: array,
-            lock_builder: move |array| { array.write().expect("could not lock the rwlock") },
+            lock_builder: move |array| { array.try_write().expect("could not lock the rwlock") },
             shape: vec![],
             strides: vec![],
         };
@@ -146,7 +146,7 @@ where
     fn try_from(ReadOnly(array): ReadOnly<Arc<RwLock<Array<T, D>>>>) -> Result<Self, Self::Error> {
         let ctx = RwLockCtxReadBuilder {
             array: array,
-            lock_builder: move |array| { array.read().expect("could not lock the rwlock") },
+            lock_builder: move |array| { array.try_read().expect("could not lock the rwlock") },
             shape: vec![],
             strides: vec![],
         };
@@ -237,7 +237,7 @@ where
     fn try_from(array: Arc<Mutex<Array<T, D>>>) -> Result<Self, Self::Error> {
         let ctx = MutexCtxBuilder {
             array: array,
-            lock_builder: move |array| { array.lock().expect("could not lock the mutex") },
+            lock_builder: move |array| { array.try_lock().expect("could not lock the mutex") },
             shape: vec![],
             strides: vec![],
         };
@@ -319,7 +319,7 @@ mod tests {
             view[[1, 1]] = 42.0;
         }
 
-        let array = array.lock().unwrap();
+        let array = array.try_lock().unwrap();
         assert_eq!(*array, arr2(&[[1.0, 2.0, 3.0], [4.0, 42.0, 6.0]]));
     }
 
@@ -338,7 +338,7 @@ mod tests {
             view[[1, 1]] = 42.0;
         }
 
-        let array = array.read().unwrap();
+        let array = array.try_read().unwrap();
         assert_eq!(*array, arr2(&[[1.0, 2.0, 3.0], [4.0, 42.0, 6.0]]));
     }
 

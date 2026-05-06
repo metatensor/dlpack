@@ -52,7 +52,7 @@ impl<T> TryFrom<Arc<Mutex<Vec<T>>>> for DLPackTensor where T: GetDLPackDataType 
     fn try_from(array: Arc<Mutex<Vec<T>>>) -> Result<DLPackTensor, Self::Error> {
         let ctx = MutexCtxBuilder {
             array: array,
-            lock_builder: |array| { array.lock().expect("could not lock the mutex") },
+            lock_builder: |array| { array.try_lock().expect("could not lock the mutex") },
             shape: Box::new(0),
             stride: Box::new(1),
         };
@@ -152,7 +152,7 @@ impl<T> TryFrom<ReadWrite<Arc<RwLock<Vec<T>>>>> for DLPackTensor where T: GetDLP
     fn try_from(ReadWrite(array): ReadWrite<Arc<RwLock<Vec<T>>>>) -> Result<DLPackTensor, Self::Error> {
         let ctx = RwLockCtxWriteBuilder {
             array: array,
-            lock_builder: move |array| { array.write().expect("could not lock the rwlock") },
+            lock_builder: move |array| { array.try_write().expect("could not lock the rwlock") },
             shape: Box::new(0),
             stride: Box::new(1),
         };
@@ -214,7 +214,7 @@ impl<T> TryFrom<ReadOnly<Arc<RwLock<Vec<T>>>>> for DLPackTensor where T: GetDLPa
     fn try_from(ReadOnly(array): ReadOnly<Arc<RwLock<Vec<T>>>>) -> Result<DLPackTensor, Self::Error> {
         let ctx = RwLockCtxReadBuilder {
             array: array,
-            lock_builder: move |array| { array.read().expect("could not lock the rwlock") },
+            lock_builder: move |array| { array.try_read().expect("could not lock the rwlock") },
             shape: Box::new(0),
             stride: Box::new(1),
         };
@@ -287,7 +287,7 @@ mod tests {
             slice[1] = 42;
         }
 
-        let lock = data.lock().unwrap();
+        let lock = data.try_lock().unwrap();
         assert_eq!(&*lock, &[1, 42, 3]);
     }
 
@@ -306,7 +306,7 @@ mod tests {
             slice[1] = 42;
         }
 
-        let lock = data.read().unwrap();
+        let lock = data.try_read().unwrap();
         assert_eq!(&*lock, &[1, 42, 3]);
     }
 
@@ -324,7 +324,7 @@ mod tests {
             assert_eq!(slice, &[1, 2, 3]);
         }
 
-        let lock = data.read().unwrap();
+        let lock = data.try_read().unwrap();
         assert_eq!(&*lock, &[1, 2, 3]);
     }
 
