@@ -475,9 +475,13 @@ impl<'a> DLPackTensorRef<'a> {
 
     /// Get the shape of this tensor
     pub fn shape(&self) -> &[i64] {
-        assert!(!self.raw.shape.is_null());
-        unsafe {
-            return std::slice::from_raw_parts(self.raw.shape, self.n_dims());
+        if self.raw.shape.is_null() {
+            assert!(self.raw.ndim == 0, "Shape pointer is null but ndim is not 0");
+            return &[];
+        } else {
+            unsafe {
+                return std::slice::from_raw_parts(self.raw.shape, self.n_dims());
+            }
         }
     }
 

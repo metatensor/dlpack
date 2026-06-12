@@ -174,6 +174,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn test_dlpack_pointer_cast() {
         let value: u32 = 42;
         let mut mock_data = value;

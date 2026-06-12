@@ -412,4 +412,37 @@ mod tests {
         assert_eq!(tensor.shape(), &[0, 0, 0]);
         assert!(tensor.as_dltensor().data.is_null());
     }
+
+    #[test]
+    fn scalar_mutex_to_dlpack() {
+        let array = Arc::new(Mutex::new(ndarray::arr0(42.0f64)));
+        let tensor: DLPackTensor = Arc::clone(&array).try_into().unwrap();
+        assert_eq!(tensor.n_dims(), 0);
+        assert!(tensor.shape().is_empty());
+        unsafe {
+            assert_eq!(std::ptr::read(tensor.data_ptr::<f64>().unwrap()), 42.0);
+        }
+    }
+
+    #[test]
+    fn scalar_rwlock_write_to_dlpack() {
+        let array = Arc::new(RwLock::new(ndarray::arr0(3.41f64)));
+        let tensor: DLPackTensor = ReadWrite(Arc::clone(&array)).try_into().unwrap();
+        assert_eq!(tensor.n_dims(), 0);
+        assert!(tensor.shape().is_empty());
+        unsafe {
+            assert_eq!(std::ptr::read(tensor.data_ptr::<f64>().unwrap()), 3.41);
+        }
+    }
+
+    #[test]
+    fn scalar_rwlock_read_to_dlpack() {
+        let array = Arc::new(RwLock::new(ndarray::arr0(2.72f64)));
+        let tensor: DLPackTensor = ReadOnly(Arc::clone(&array)).try_into().unwrap();
+        assert_eq!(tensor.n_dims(), 0);
+        assert!(tensor.shape().is_empty());
+        unsafe {
+            assert_eq!(std::ptr::read(tensor.data_ptr::<f64>().unwrap()), 2.72);
+        }
+    }
 }
