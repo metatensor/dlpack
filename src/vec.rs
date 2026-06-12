@@ -81,7 +81,12 @@ impl<T> TryFrom<DLPackTensor> for Vec<T>  where T: DLPackPointerCast + Clone {
         let size = check_tensor(&value.as_ref())?;
         let ptr = value.data_ptr::<T>()?;
 
-        let slice = unsafe { std::slice::from_raw_parts(ptr, size) };
+        let slice = if size == 0 {
+            &[]
+        } else {
+            unsafe { std::slice::from_raw_parts(ptr, size) }
+        };
+
         return Ok(slice.to_vec());
     }
 }
@@ -93,7 +98,12 @@ impl<T> TryFrom<DLPackTensor> for Box<[T]>  where T: DLPackPointerCast + Clone {
         let size = check_tensor(&value.as_ref())?;
         let ptr = value.data_ptr::<T>()?;
 
-        let slice = unsafe { std::slice::from_raw_parts(ptr, size) };
+        let slice = if size == 0 {
+            &[]
+        } else {
+            unsafe { std::slice::from_raw_parts(ptr, size) }
+        };
+
         return Ok(slice.into());
     }
 }
@@ -105,8 +115,12 @@ impl<'a, T> TryFrom<DLPackTensorRef<'a>> for &'a [T] where T: DLPackPointerCast 
         let size = check_tensor(&value)?;
         let ptr = value.data_ptr::<T>()?;
 
-        let slice = unsafe { std::slice::from_raw_parts(ptr, size) };
-        return Ok(slice);
+        if size == 0 {
+            return Ok(&[]);
+        } else {
+            let slice = unsafe { std::slice::from_raw_parts(ptr, size) };
+            return Ok(slice);
+        }
     }
 }
 
@@ -118,8 +132,12 @@ impl<'a, T> TryFrom<DLPackTensorRefMut<'a>> for &'a mut [T] where T: DLPackPoint
         let size = check_tensor(&value.as_ref())?;
         let ptr = value.data_ptr_mut::<T>()?;
 
-        let slice = unsafe { std::slice::from_raw_parts_mut(ptr, size) };
-        return Ok(slice);
+        if size == 0 {
+            return Ok(&mut []);
+        } else {
+            let slice = unsafe { std::slice::from_raw_parts_mut(ptr, size) };
+            return Ok(slice);
+        }
     }
 }
 
@@ -154,8 +172,14 @@ macro_rules! impl_try_from {
                 let shape_ptr = ctx.shape.as_mut();
                 let stride_ptr = ctx.stride.as_mut();
 
+                let data = if ctx.array.is_empty() {
+                    std::ptr::null_mut()
+                } else {
+                    ctx.array.as_ptr()
+                };
+
                 let dl_tensor = sys::DLTensor {
-                    data: ctx.array.as_ptr().cast_mut().cast(),
+                    data: data.cast_mut().cast(),
                     device: sys::DLDevice {
                         device_type: sys::DLDeviceType::kDLCPU,
                         device_id: 0,
@@ -245,5 +269,73 @@ mod tests {
             }
             _ => panic!("unexpected error: {}", err),
         }
+    }
+
+    #[test]
+    fn empty_vec_to_dlpack() {
+        let data: Vec<i32> = Vec::new();
+        let tensor: DLPackTensor = data.try_into().unwrap();
+        assert_eq!(tensor.shape(), &[0]);
+        assert!(tensor.as_dltensor().data.is_null());
+    }
+
+    #[test]
+    fn empty_dlpack_to_vec_ref() {
+        let mut shape = vec![0i64];
+        let mut strides = vec![1i64];
+
+        let dl_tensor = crate::sys::DLTensor {
+            data: std::ptr::null_mut(),
+            device: crate::sys::DLDevice {
+                device_type: crate::sys::DLDeviceType::kDLCPU,
+                device_id: 0,
+            },
+            ndim: 1,
+            dtype: i32::get_dlpack_data_type(),
+            shape: shape.as_mut_ptr(),
+            strides: strides.as_mut_ptr(),
+            byte_offset: 0,
+        };
+
+        unsafe {
+            let tensor_ref = DLPackTensorRef::from_raw(dl_tensor);
+            let slice: &[i32] = tensor_ref.try_into().unwrap();
+            assert!(slice.is_empty());
+        }
+    }
+
+    unsafe extern "C" fn empty_deleter(tensor: *mut sys::DLManagedTensorVersioned) {
+        let _ = Box::from_raw(tensor);
+    }
+
+    #[test]
+    fn empty_dlpack_to_vec_owned() {
+        let mut shape = vec![0i64];
+        let mut strides = vec![1i64];
+
+        let dl_tensor = crate::sys::DLTensor {
+            data: std::ptr::null_mut(),
+            device: crate::sys::DLDevice {
+                device_type: crate::sys::DLDeviceType::kDLCPU,
+                device_id: 0,
+            },
+            ndim: 1,
+            dtype: i32::get_dlpack_data_type(),
+            shape: shape.as_mut_ptr(),
+            strides: strides.as_mut_ptr(),
+            byte_offset: 0,
+        };
+
+        let managed = Box::new(crate::sys::DLManagedTensorVersioned {
+            version: crate::sys::DLPackVersion::current(),
+            manager_ctx: std::ptr::null_mut(),
+            deleter: Some(empty_deleter),
+            flags: 0,
+            dl_tensor,
+        });
+
+        let tensor = unsafe { DLPackTensor::from_ptr(Box::into_raw(managed)) };
+        let vec: Vec<i32> = tensor.try_into().unwrap();
+        assert!(vec.is_empty());
     }
 }

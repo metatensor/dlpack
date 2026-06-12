@@ -467,6 +467,63 @@ assert np.allclose(array, expected)
 
     #[test]
     #[cfg_attr(miri, ignore)]
+    fn test_empty_ndarray_to_numpy() -> PyResult<()> {
+        Python::initialize();
+        Python::attach(|py| {
+            use ndarray::Array3;
+
+            let rust_array: Array3<f64> = Array3::from_shape_vec([0, 0, 0], vec![]).unwrap();
+            let dl_tensor = DLPackTensor::try_from(rust_array).unwrap();
+            let tensor = PyDLPack::try_from(dl_tensor).unwrap();
+
+            let locals = PyDict::new(py);
+            locals.set_item("np", py.import("numpy")?)?;
+            locals.set_item("tensor", tensor)?;
+
+            let code = c_str!(
+                "
+array = np.from_dlpack(tensor)
+assert array.shape == (0, 0, 0), f\"got shape {array.shape}\"
+assert array.ndim == 3
+assert array.size == 0
+"
+            );
+            py.run(code, None, Some(&locals))?;
+            Ok(())
+        })
+    }
+
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn test_empty_numpy_to_ndarray() -> PyResult<()> {
+        Python::initialize();
+        Python::attach(|py| {
+            let locals = PyDict::new(py);
+            locals.set_item("np", py.import("numpy")?)?;
+
+            let code = c_str!(
+                "
+array = np.empty((0, 0, 0), dtype=np.float64)
+result_capsule = array.__dlpack__()
+"
+            );
+            py.run(code, None, Some(&locals))?;
+
+            let result = locals.get_item("result_capsule")?.unwrap();
+            let capsule: Bound<PyCapsule> = result.extract()?;
+
+            let dlpack_ref = DLPackTensorRef::try_from(capsule)?;
+            use ndarray::ArrayView3;
+            let array = ArrayView3::<f64>::try_from(dlpack_ref).unwrap();
+
+            assert_eq!(array.shape(), [0, 0, 0]);
+            assert!(array.is_empty());
+            Ok(())
+        })
+    }
+
+    #[test]
+    #[cfg_attr(miri, ignore)]
     fn test_v1_0_null_strides_allowed() -> PyResult<()> {
         Python::initialize();
         Python::attach(|py| {

@@ -50,6 +50,7 @@ impl<T> TryFrom<Arc<Mutex<Vec<T>>>> for DLPackTensor where T: GetDLPackDataType 
     type Error = DLPackVecError;
 
     fn try_from(array: Arc<Mutex<Vec<T>>>) -> Result<DLPackTensor, Self::Error> {
+        let empty = array.lock().expect("could not aquire lock").is_empty();
         let ctx = MutexCtxBuilder {
             array: array,
             lock_builder: |array| { array.try_lock().expect("could not lock the mutex") },
@@ -74,12 +75,14 @@ impl<T> TryFrom<Arc<Mutex<Vec<T>>>> for DLPackTensor where T: GetDLPackDataType 
         });
 
         let mut data = std::ptr::null_mut();
-        ctx.with_lock_mut(|lock| {
-            // We can give out a mutable pointer to the data because the lock
-            // will be held until the `DLPackTensor` is dropped, so the data
-            // won't be modified by Rust while it's used by DLPack.
-            data = lock.as_mut_ptr().cast()
-        });
+        if !empty {
+            ctx.with_lock_mut(|lock| {
+                // We can give out a mutable pointer to the data because the lock
+                // will be held until the `DLPackTensor` is dropped, so the data
+                // won't be modified by Rust while it's used by DLPack.
+                data = lock.as_mut_ptr().cast()
+            });
+        }
 
         let dl_tensor = sys::DLTensor {
             data: data,
@@ -150,6 +153,8 @@ impl<T> TryFrom<ReadWrite<Arc<RwLock<Vec<T>>>>> for DLPackTensor where T: GetDLP
     type Error = DLPackVecError;
 
     fn try_from(ReadWrite(array): ReadWrite<Arc<RwLock<Vec<T>>>>) -> Result<DLPackTensor, Self::Error> {
+        let empty = array.read().expect("could not aquire lock").is_empty();
+
         let ctx = RwLockCtxWriteBuilder {
             array: array,
             lock_builder: move |array| { array.try_write().expect("could not lock the rwlock") },
@@ -174,12 +179,14 @@ impl<T> TryFrom<ReadWrite<Arc<RwLock<Vec<T>>>>> for DLPackTensor where T: GetDLP
         });
 
         let mut data = std::ptr::null_mut();
-        ctx.with_lock_mut(|lock| {
-            // We can give out a mutable pointer to the data because the lock
-            // will be held until the `DLPackTensor` is dropped, so the data
-            // won't be modified by Rust while it's used by DLPack.
-            data = lock.as_mut_ptr().cast()
-        });
+        if !empty {
+            ctx.with_lock_mut(|lock| {
+                // We can give out a mutable pointer to the data because the lock
+                // will be held until the `DLPackTensor` is dropped, so the data
+                // won't be modified by Rust while it's used by DLPack.
+                data = lock.as_mut_ptr().cast()
+            });
+        }
 
         let dl_tensor = sys::DLTensor {
             data: data,
@@ -212,6 +219,8 @@ impl<T> TryFrom<ReadOnly<Arc<RwLock<Vec<T>>>>> for DLPackTensor where T: GetDLPa
     type Error = DLPackVecError;
 
     fn try_from(ReadOnly(array): ReadOnly<Arc<RwLock<Vec<T>>>>) -> Result<DLPackTensor, Self::Error> {
+        let empty = array.read().expect("could not aquire lock").is_empty();
+
         let ctx = RwLockCtxReadBuilder {
             array: array,
             lock_builder: move |array| { array.try_read().expect("could not lock the rwlock") },
@@ -236,10 +245,12 @@ impl<T> TryFrom<ReadOnly<Arc<RwLock<Vec<T>>>>> for DLPackTensor where T: GetDLPa
         });
 
         let mut data = std::ptr::null_mut();
-        ctx.with_lock_mut(|lock| {
-            // Cast mut is fine, we set the read-only flag in the DLPack tensor
-            data = lock.as_ptr().cast_mut().cast()
-        });
+        if !empty {
+            ctx.with_lock_mut(|lock| {
+                // Cast mut is fine, we set the read-only flag in the DLPack tensor
+                data = lock.as_ptr().cast_mut().cast()
+            });
+        }
 
         let dl_tensor = sys::DLTensor {
             data: data,
@@ -359,5 +370,29 @@ mod tests {
         let tensor_ref = tensor.as_ref();
         let slice: &[i32] = tensor_ref.try_into().unwrap();
         assert_eq!(slice, &[1, 2, 3]);
+    }
+
+    #[test]
+    fn empty_mutex_to_dlpack() {
+        let data = Arc::new(Mutex::new(Vec::<i32>::new()));
+        let tensor: DLPackTensor = Arc::clone(&data).try_into().unwrap();
+        assert_eq!(tensor.shape(), &[0]);
+        assert!(tensor.as_dltensor().data.is_null());
+    }
+
+    #[test]
+    fn empty_rwlock_write_to_dlpack() {
+        let data = Arc::new(RwLock::new(Vec::<i32>::new()));
+        let tensor: DLPackTensor = ReadWrite(Arc::clone(&data)).try_into().unwrap();
+        assert_eq!(tensor.shape(), &[0]);
+        assert!(tensor.as_dltensor().data.is_null());
+    }
+
+    #[test]
+    fn empty_rwlock_read_to_dlpack() {
+        let data = Arc::new(RwLock::new(Vec::<i32>::new()));
+        let tensor: DLPackTensor = ReadOnly(Arc::clone(&data)).try_into().unwrap();
+        assert_eq!(tensor.shape(), &[0]);
+        assert!(tensor.as_dltensor().data.is_null());
     }
 }
