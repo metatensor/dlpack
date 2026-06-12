@@ -126,7 +126,12 @@ impl<'a, T, D> TryFrom<DLPackTensorRef<'a>> for ndarray::ArrayView<'a, T, D> whe
         let shape = tensor.shape().iter().map(|&s| s as usize).collect::<Vec<_>>();
         let shape = <D as DimFromVec>::dim_from_vec(shape)?;
 
-        let array = match DLPackTensorRef::strides(&tensor) {
+        if shape.size() == 0 {
+            // handle empty arrays
+            return Ok(ndarray::ArrayView::from_shape(shape, &[])?);
+        }
+
+        let array = match tensor.strides() {
             Some(strides) =>{
                 let s_vec = strides.iter().map(|&s| s as usize).collect::<Vec<_>>();
                 let dim_strides = <D as DimFromVec>::dim_from_vec(s_vec)?;
@@ -155,8 +160,13 @@ impl<'a, T, D> TryFrom<DLPackTensorRefMut<'a>> for ndarray::ArrayViewMut<'a, T, 
         let shape = tensor.shape().iter().map(|&s| s as usize).collect::<Vec<_>>();
         let shape = <D as DimFromVec>::dim_from_vec(shape)?;
 
+        if shape.size() == 0 {
+            // handle empty arrays
+            return Ok(ndarray::ArrayViewMut::from_shape(shape, &mut [])?);
+        }
+
         let array;
-        if let Some(strides) = DLPackTensorRefMut::strides(&tensor) {
+        if let Some(strides) = tensor.strides() {
             let strides = strides.iter().map(|&s| s as usize).collect::<Vec<_>>();
             let strides = <D as DimFromVec>::dim_from_vec(strides)?;
             let shape = shape.strides(strides);
@@ -178,7 +188,6 @@ impl<'a, T, D> TryFrom<DLPackTensorRefMut<'a>> for ndarray::ArrayViewMut<'a, T, 
 ///
 /// **Note:** This conversion makes a copy of the underlying tensor data. The
 /// original DLPack tensor memory is released after the copy is complete.
-///
 impl<T, D> TryFrom<DLPackTensor> for Array<T, D>
 where
     D: Dimension + DimFromVec + 'static,
@@ -408,12 +417,18 @@ where
             strides,
         });
 
+        let data = if ctx.array.is_empty() {
+            std::ptr::null_mut()
+        } else {
+            ctx.array.as_ptr()
+        };
+
         let dl_tensor = sys::DLTensor {
             // Casting to a mut pointer is not necessarily safe, but is required
             // by DLPack. The data can be mutated through this pointer, we
             // should try to find a way to make this work in Rust type system in
             // the future.
-            data: ctx.array.as_ptr().cast_mut().cast(),
+            data: data.cast_mut().cast(),
             device: sys::DLDevice {
                 device_type: sys::DLDeviceType::kDLCPU,
                 device_id: 0,
@@ -459,10 +474,15 @@ where
             strides,
         });
 
+        let data = if ctx.array.is_empty() {
+            std::ptr::null_mut()
+        } else {
+            ctx.array.as_ptr()
+        };
 
         let dl_tensor = sys::DLTensor {
             // Same as above, casting to a mut pointer is not necessarily safe.
-            data: ctx.array.as_ptr().cast_mut().cast(),
+            data: data.cast_mut().cast(),
             device: sys::DLDevice {
                 device_type: sys::DLDeviceType::kDLCPU,
                 device_id: 0,
@@ -719,5 +739,85 @@ mod tests {
         // Standard immutable access should remain functional.
         let tensor_ref = tensor.as_ref();
         assert_eq!(tensor_ref.dtype(), f32::get_dlpack_data_type());
+    }
+
+
+    #[test]
+    fn empty_ndarray_to_dlpack() {
+        let array = Array1::<f64>::from_shape_vec([0], vec![]).unwrap();
+        let tensor: DLPackTensor = array.try_into().unwrap();
+        assert_eq!(tensor.shape(), &[0]);
+        assert!(tensor.as_dltensor().data.is_null());
+
+        let array = Array3::<f64>::from_shape_vec([0, 0, 0], vec![]).unwrap();
+        let tensor: DLPackTensor = array.try_into().unwrap();
+        assert_eq!(tensor.shape(), &[0, 0, 0]);
+        assert!(tensor.as_dltensor().data.is_null());
+    }
+
+    #[test]
+    fn empty_arc_array_to_dlpack() {
+        let array = ndarray::ArcArray3::<f64>::from_shape_vec([0, 0, 0], vec![]).unwrap();
+        let tensor: DLPackTensor = array.try_into().unwrap();
+        assert_eq!(tensor.shape(), &[0, 0, 0]);
+        assert!(tensor.as_dltensor().data.is_null());
+    }
+
+    #[test]
+    fn empty_dlpack_to_ndarray_view() {
+        let mut shape = vec![0i64, 0, 0];
+        let mut strides = vec![0i64, 0, 0];
+
+        let dl_tensor = DLTensor {
+            data: std::ptr::null_mut(),
+            device: DLDevice {
+                device_type: DLDeviceType::kDLCPU,
+                device_id: 0,
+            },
+            ndim: 3,
+            dtype: f32::get_dlpack_data_type(),
+            shape: shape.as_mut_ptr(),
+            strides: strides.as_mut_ptr(),
+            byte_offset: 0,
+        };
+
+        let dlpack_ref = unsafe { DLPackTensorRef::from_raw(dl_tensor) };
+        let array_view = ArrayView3::<f32>::try_from(dlpack_ref).unwrap();
+        assert_eq!(array_view.shape(), &[0, 0, 0]);
+    }
+
+    unsafe extern "C" fn empty_deleter(tensor: *mut sys::DLManagedTensorVersioned) {
+        let _ = Box::from_raw(tensor);
+    }
+
+    #[test]
+    fn empty_dlpack_to_ndarray_owned() {
+        let mut shape = vec![0i64, 0, 0];
+        let mut strides = vec![0i64, 0, 0];
+
+        let dl_tensor = DLTensor {
+            data: std::ptr::null_mut(),
+            device: DLDevice {
+                device_type: DLDeviceType::kDLCPU,
+                device_id: 0,
+            },
+            ndim: 3,
+            dtype: f32::get_dlpack_data_type(),
+            shape: shape.as_mut_ptr(),
+            strides: strides.as_mut_ptr(),
+            byte_offset: 0,
+        };
+
+        let managed = Box::new(crate::sys::DLManagedTensorVersioned {
+            version: crate::sys::DLPackVersion::current(),
+            manager_ctx: std::ptr::null_mut(),
+            deleter: Some(empty_deleter),
+            flags: 0,
+            dl_tensor,
+        });
+
+        let tensor = unsafe { DLPackTensor::from_ptr(Box::into_raw(managed)) };
+        let array: Array3<f32> = tensor.try_into().unwrap();
+        assert_eq!(array.shape(), &[0, 0, 0]);
     }
 }
