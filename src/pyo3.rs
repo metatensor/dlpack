@@ -524,6 +524,58 @@ result_capsule = array.__dlpack__()
 
     #[test]
     #[cfg_attr(miri, ignore)]
+    fn test_scalar_ndarray_to_numpy() -> PyResult<()> {
+        Python::initialize();
+        Python::attach(|py| {
+            let rust_array = ndarray::arr0(3.41f64);
+            let dl_tensor = DLPackTensor::try_from(rust_array).unwrap();
+            let tensor = PyDLPack::try_from(dl_tensor).unwrap();
+
+            let locals = PyDict::new(py);
+            locals.set_item("np", py.import("numpy")?)?;
+            locals.set_item("tensor", tensor)?;
+
+            let code = c_str!(
+                "
+array = np.from_dlpack(tensor)
+assert array.ndim == 0, f\"got ndim {array.ndim}\"
+assert array.size == 1
+assert np.allclose(array, 3.41)
+"
+            );
+            py.run(code, None, Some(&locals))?;
+            Ok(())
+        })
+    }
+
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn test_scalar_numpy_to_ndarray() -> PyResult<()> {
+        Python::initialize();
+        Python::attach(|py| {
+            let locals = PyDict::new(py);
+            locals.set_item("np", py.import("numpy")?)?;
+
+            let code = c_str!(
+                "
+array = np.array(42.0)
+result_capsule = array.__dlpack__()
+"
+            );
+            py.run(code, None, Some(&locals))?;
+
+            let result = locals.get_item("result_capsule")?.unwrap();
+            let capsule: Bound<PyCapsule> = result.extract()?;
+
+            let dlpack_ref = DLPackTensorRef::try_from(capsule)?;
+            let array = ndarray::ArrayView0::<f64>::try_from(dlpack_ref).unwrap();
+            assert_eq!(array[()], 42.0);
+            Ok(())
+        })
+    }
+
+    #[test]
+    #[cfg_attr(miri, ignore)]
     fn test_v1_0_null_strides_allowed() -> PyResult<()> {
         Python::initialize();
         Python::attach(|py| {

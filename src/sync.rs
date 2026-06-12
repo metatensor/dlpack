@@ -395,4 +395,35 @@ mod tests {
         assert_eq!(tensor.shape(), &[0]);
         assert!(tensor.as_dltensor().data.is_null());
     }
+
+    #[test]
+    fn scalar_mutex_to_dlpack() {
+        let data = Arc::new(Mutex::new(vec![42i32]));
+        let tensor: DLPackTensor = Arc::clone(&data).try_into().unwrap();
+        assert_eq!(tensor.shape(), &[1]);
+
+        unsafe {
+            assert_eq!(std::ptr::read(tensor.data_ptr::<i32>().unwrap()), 42);
+        }
+    }
+
+    #[test]
+    fn scalar_rwlock_write_to_dlpack() {
+        let data = Arc::new(RwLock::new(vec![42i16]));
+        let tensor: DLPackTensor = ReadWrite(Arc::clone(&data)).try_into().unwrap();
+        assert_eq!(tensor.shape(), &[1]);
+        unsafe {
+            assert_eq!(std::ptr::read(tensor.data_ptr::<i16>().unwrap()), 42);
+        }
+    }
+
+    #[test]
+    fn scalar_rwlock_read_to_dlpack() {
+        let data = Arc::new(RwLock::new(vec![42u64]));
+        let tensor: DLPackTensor = ReadOnly(Arc::clone(&data)).try_into().unwrap();
+        assert_eq!(tensor.shape(), &[1]);
+        unsafe {
+            assert_eq!(std::ptr::read(tensor.data_ptr::<u64>().unwrap()), 42);
+        }
+    }
 }

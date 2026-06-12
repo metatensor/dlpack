@@ -423,6 +423,7 @@ where
             ctx.array.as_ptr()
         };
 
+        let ndim = ctx.shape.len() as i32;
         let dl_tensor = sys::DLTensor {
             // Casting to a mut pointer is not necessarily safe, but is required
             // by DLPack. The data can be mutated through this pointer, we
@@ -433,10 +434,10 @@ where
                 device_type: sys::DLDeviceType::kDLCPU,
                 device_id: 0,
             },
-            ndim: ctx.shape.len() as i32,
+            ndim: ndim,
             dtype: T::get_dlpack_data_type(),
-            shape: ctx.shape.as_mut_ptr(),
-            strides: ctx.strides.as_mut_ptr(),
+            shape: if ndim == 0 { std::ptr::null_mut() } else { ctx.shape.as_mut_ptr() },
+            strides: if ndim == 0 { std::ptr::null_mut() } else { ctx.strides.as_mut_ptr() },
             byte_offset: 0,
         };
 
@@ -489,8 +490,8 @@ where
             },
             ndim,
             dtype: T::get_dlpack_data_type(),
-            shape: ctx.shape.as_mut_ptr(),
-            strides: ctx.strides.as_mut_ptr(),
+            shape: if ndim == 0 { std::ptr::null_mut() } else { ctx.shape.as_mut_ptr() },
+            strides: if ndim == 0 { std::ptr::null_mut() } else { ctx.strides.as_mut_ptr() },
             byte_offset: 0,
         };
 
@@ -786,7 +787,7 @@ mod tests {
         assert_eq!(array_view.shape(), &[0, 0, 0]);
     }
 
-    unsafe extern "C" fn empty_deleter(tensor: *mut sys::DLManagedTensorVersioned) {
+    unsafe extern "C" fn box_deleter(tensor: *mut sys::DLManagedTensorVersioned) {
         let _ = Box::from_raw(tensor);
     }
 
@@ -811,7 +812,7 @@ mod tests {
         let managed = Box::new(crate::sys::DLManagedTensorVersioned {
             version: crate::sys::DLPackVersion::current(),
             manager_ctx: std::ptr::null_mut(),
-            deleter: Some(empty_deleter),
+            deleter: Some(box_deleter),
             flags: 0,
             dl_tensor,
         });
@@ -819,5 +820,80 @@ mod tests {
         let tensor = unsafe { DLPackTensor::from_ptr(Box::into_raw(managed)) };
         let array: Array3<f32> = tensor.try_into().unwrap();
         assert_eq!(array.shape(), &[0, 0, 0]);
+    }
+
+    #[test]
+    fn scalar_ndarray_to_dlpack() {
+        let array = arr0(42.0f64);
+        let tensor: DLPackTensor = array.try_into().unwrap();
+        assert_eq!(tensor.n_dims(), 0);
+        assert!(tensor.as_dltensor().shape.is_null());
+        assert!(tensor.shape().is_empty());
+        assert!(tensor.as_dltensor().strides.is_null());
+        assert!(tensor.strides().is_none());
+    }
+
+    #[test]
+    fn scalar_arc_array_to_dlpack() {
+        let array = ndarray::ArcArray::<f64, ndarray::Ix0>::from_elem((), 42.0f64);
+        let tensor: DLPackTensor = array.try_into().unwrap();
+        assert_eq!(tensor.n_dims(), 0);
+        assert!(tensor.as_dltensor().shape.is_null());
+        assert!(tensor.shape().is_empty());
+        assert!(tensor.as_dltensor().strides.is_null());
+        assert!(tensor.strides().is_none());
+    }
+
+    #[test]
+    fn scalar_dlpack_to_ndarray_view() {
+        let mut value = 3.41f32;
+
+        let dl_tensor = DLTensor {
+            data: (&mut value as *mut f32).cast(),
+            device: DLDevice {
+                device_type: DLDeviceType::kDLCPU,
+                device_id: 0,
+            },
+            ndim: 0,
+            dtype: f32::get_dlpack_data_type(),
+            shape: std::ptr::null_mut(),
+            strides: std::ptr::null_mut(),
+            byte_offset: 0,
+        };
+
+        let dlpack_ref = unsafe { DLPackTensorRef::from_raw(dl_tensor) };
+        let array_view = ArrayView0::<f32>::try_from(dlpack_ref).unwrap();
+        assert!(array_view.shape().is_empty());
+        assert_eq!(array_view[()], 3.41);
+    }
+
+    #[test]
+    fn scalar_dlpack_to_ndarray_owned() {
+        let mut value = 2.72f64;
+
+        let dl_tensor = DLTensor {
+            data: (&mut value as *mut f64).cast(),
+            device: DLDevice {
+                device_type: DLDeviceType::kDLCPU,
+                device_id: 0,
+            },
+            ndim: 0,
+            dtype: f64::get_dlpack_data_type(),
+            shape: std::ptr::null_mut(),
+            strides: std::ptr::null_mut(),
+            byte_offset: 0,
+        };
+
+        let managed = Box::new(crate::sys::DLManagedTensorVersioned {
+            version: crate::sys::DLPackVersion::current(),
+            manager_ctx: std::ptr::null_mut(),
+            deleter: Some(box_deleter),
+            flags: 0,
+            dl_tensor,
+        });
+
+        let tensor = unsafe { DLPackTensor::from_ptr(Box::into_raw(managed)) };
+        let array: Array0<f64> = tensor.try_into().unwrap();
+        assert_eq!(array[()], 2.72);
     }
 }

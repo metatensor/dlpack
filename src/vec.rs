@@ -304,7 +304,7 @@ mod tests {
         }
     }
 
-    unsafe extern "C" fn empty_deleter(tensor: *mut sys::DLManagedTensorVersioned) {
+    unsafe extern "C" fn box_deleter(tensor: *mut sys::DLManagedTensorVersioned) {
         let _ = Box::from_raw(tensor);
     }
 
@@ -329,7 +329,7 @@ mod tests {
         let managed = Box::new(crate::sys::DLManagedTensorVersioned {
             version: crate::sys::DLPackVersion::current(),
             manager_ctx: std::ptr::null_mut(),
-            deleter: Some(empty_deleter),
+            deleter: Some(box_deleter),
             flags: 0,
             dl_tensor,
         });
@@ -337,5 +337,45 @@ mod tests {
         let tensor = unsafe { DLPackTensor::from_ptr(Box::into_raw(managed)) };
         let vec: Vec<i32> = tensor.try_into().unwrap();
         assert!(vec.is_empty());
+    }
+
+    #[test]
+    fn scalar_vec_to_dlpack() {
+        let data = vec![42i32];
+        let tensor: DLPackTensor = data.try_into().unwrap();
+        assert_eq!(tensor.shape(), &[1]);
+        assert!(!tensor.as_dltensor().data.is_null());
+    }
+
+    #[test]
+    fn scalar_dlpack_to_vec() {
+        let mut shape = vec![1i64];
+        let mut strides = vec![1i64];
+        let mut value = 42f64;
+
+        let dl_tensor = crate::sys::DLTensor {
+            data: (&mut value as *mut f64).cast(),
+            device: crate::sys::DLDevice {
+                device_type: crate::sys::DLDeviceType::kDLCPU,
+                device_id: 0,
+            },
+            ndim: 1,
+            dtype: f64::get_dlpack_data_type(),
+            shape: shape.as_mut_ptr(),
+            strides: strides.as_mut_ptr(),
+            byte_offset: 0,
+        };
+
+        let managed = Box::new(crate::sys::DLManagedTensorVersioned {
+            version: crate::sys::DLPackVersion::current(),
+            manager_ctx: std::ptr::null_mut(),
+            deleter: Some(box_deleter),
+            flags: 0,
+            dl_tensor,
+        });
+
+        let tensor = unsafe { DLPackTensor::from_ptr(Box::into_raw(managed)) };
+        let vec: Vec<f64> = tensor.try_into().unwrap();
+        assert_eq!(vec, vec![42.0]);
     }
 }
