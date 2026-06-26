@@ -256,7 +256,7 @@ pub struct DLTensor {
     ///
     /// Note that as of Nov 2021, multiply libraries (CuPy, PyTorch, TensorFlow,
     /// TVM, perhaps others) do not adhere to this 256 byte alignment
-    /// requirement on CPU/CUDA/ROCm, and always use `byte_offset=0`.  This must
+    /// requirement on CPU/CUDA/ROCm, and always use `byte_offset=0`. This must
     /// be fixed (after which this note will be updated); at the moment it is
     /// recommended to not rely on the data pointer being correctly aligned.
     ///
@@ -287,17 +287,15 @@ pub struct DLTensor {
     pub shape: *mut i64,
     /// Strides of the tensor (in number of elements, not bytes).
     ///
-    ///  can not be NULL if ndim != 0, must points to
-    ///  an array of ndim elements that specifies the strides,
-    ///  so consumer can always rely on strides[dim] being valid for 0 <= dim < ndim.
+    /// can not be NULL if ndim != 0, must points to an array of ndim elements
+    /// that specifies the strides, so consumer can always rely on strides[dim]
+    /// being valid for 0 <= dim < ndim.
     ///
-    ///  When ndim == 0, strides can be set to NULL.
+    /// When ndim == 0, strides can be set to NULL.
     ///
-    /// NOTE: Before DLPack v1.2, strides can be NULL to indicate contiguous data.
-    ///       This is not allowed in DLPack v1.2 and later. The rationale
+    /// NOTE: Before DLPack v1.2, strides can be NULL to indicate contiguous
+    ///       data. This is not allowed in DLPack v1.2 and later. The rationale
     ///       is to simplify the consumer handling.
-    ///
-    /// When ndim == 0, strides may represent NULL.
     pub strides: *mut i64,
     /// The offset in bytes to the beginning pointer to data
     pub byte_offset: u64,

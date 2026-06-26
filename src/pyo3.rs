@@ -88,24 +88,21 @@ pub struct PyDLPack {
 
 impl PyDLPack {
     fn as_dltensor<'py>(&self, py: Python<'py>) -> PyResult<&'py sys::DLTensor> {
+        let capsule = self.capsule.bind(py);
         if self.is_versioned {
-            let versioned_tensor = self.capsule.bind(py).pointer() as *const sys::DLManagedTensorVersioned;
-            if versioned_tensor.is_null() {
-                return Err(PyErr::new::<PyValueError, _>(
-                    "PyCapsule pointer is null",
-                ));
-            }
+            let versioned_tensor = capsule
+                .pointer_checked(Some(DLTENSOR_VERSIONED_NAME))?
+                .as_ptr()
+                .cast::<sys::DLManagedTensorVersioned>();
 
             unsafe {
                 return Ok(&(*versioned_tensor).dl_tensor);
             }
         } else {
-            let tensor = self.capsule.bind(py).pointer() as *const sys::DLManagedTensor;
-            if tensor.is_null() {
-                return Err(PyErr::new::<PyValueError, _>(
-                    "PyCapsule pointer is null",
-                ));
-            }
+            let tensor = capsule
+                .pointer_checked(Some(DLTENSOR_NAME))?
+                .as_ptr()
+                .cast::<sys::DLManagedTensor>();
 
             unsafe {
                 return Ok(&(*tensor).dl_tensor);
@@ -119,7 +116,9 @@ impl PyDLPack {
 impl PyDLPack {
     #[new]
     fn new<'py>(py: Python<'py>, capsule: Py<PyCapsule>) -> PyResult<Self> {
-        let name = capsule.bind(py).name()?;
+        // SAFETY: the &CStr is used only for the duration of this function,
+        // before any arbitrary Python code can run and rename the capsule.
+        let name = capsule.bind(py).name()?.map(|n| unsafe { n.as_cstr() });
 
         let is_versioned = if name == Some(DLTENSOR_NAME) {
             false
@@ -168,7 +167,12 @@ impl PyDLPack {
         }
 
         let capsule = self.capsule.clone_ref(py);
-        let name = capsule.bind(py).name()?.expect("capsule name should be set").to_str().expect("name should be utf8");
+        // SAFETY: the &CStr is used only for the immediate `starts_with` check,
+        // before any arbitrary Python code can run and rename the capsule.
+        let name_cstr = unsafe {
+            capsule.bind(py).name()?.expect("capsule name should be set").as_cstr()
+        };
+        let name = name_cstr.to_str().expect("name should be utf8");
         if name.starts_with("used_") {
             return Err(PyErr::new::<PyValueError, _>("this caspsule has already been used"));
         }
@@ -232,7 +236,9 @@ impl<'py> TryFrom<&Bound<'py, PyCapsule>> for DLPackTensor {
     type Error = PyErr;
 
     fn try_from(capsule: &Bound<'py, PyCapsule>) -> Result<Self, Self::Error> {
-        let name = capsule.name()?;
+        // SAFETY: the &CStr is used only for the duration of this function,
+        // before any arbitrary Python code can run and rename the capsule.
+        let name = capsule.name()?.map(|n| unsafe { n.as_cstr() });
 
         let is_versioned = if name == Some(DLTENSOR_NAME) {
             false
@@ -254,34 +260,31 @@ impl<'py> TryFrom<&Bound<'py, PyCapsule>> for DLPackTensor {
             ));
         }
 
-        let pointer = capsule.pointer().cast::<DLManagedTensorVersioned>();
-        if let Some(pointer) = NonNull::new(pointer) {
-            let tensor_ref = unsafe { pointer.as_ref() };
-            let version = tensor_ref.version;
-            let is_v1_2_or_newer = version.major > 1 || (version.major == 1 && version.minor >= 2);
-            let dltensor = &tensor_ref.dl_tensor;
-            // Enforce v1.2+ stride requirement if ndim > 0
-            if is_v1_2_or_newer && dltensor.ndim > 0 && dltensor.strides.is_null() {
-                return Err(PyErr::new::<PyValueError, _>(
-                    "DLPack v1.2+ requires non-NULL strides for non-scalar tensors"
-                ));
-            }
-            unsafe {
-                // set the name to "used_dltensor_versioned" so that
-                // the capsule destructor does not free the tensor
-                let status = pyo3::ffi::PyCapsule_SetName(
-                    capsule.as_ptr(), USED_DLTENSOR_VERSIONED_NAME.as_ptr()
-                );
-                if status != 0 {
-                    return Err(PyErr::fetch(capsule.py()));
-                }
-
-                return Ok(DLPackTensor::from_ptr(pointer));
-            }
-        } else {
+        let pointer: NonNull<DLManagedTensorVersioned> = capsule
+            .pointer_checked(Some(DLTENSOR_VERSIONED_NAME))?
+            .cast();
+        let tensor_ref = unsafe { pointer.as_ref() };
+        let version = tensor_ref.version;
+        let is_v1_2_or_newer = version.major > 1 || (version.major == 1 && version.minor >= 2);
+        let dltensor = &tensor_ref.dl_tensor;
+        // Enforce v1.2+ stride requirement if ndim > 0
+        if is_v1_2_or_newer && dltensor.ndim > 0 && dltensor.strides.is_null() {
             return Err(PyErr::new::<PyValueError, _>(
-                "invalid capsule, the pointer was null"
+                "DLPack v1.2+ requires non-NULL strides for non-scalar tensors"
             ));
+        }
+
+        unsafe {
+            // set the name to "used_dltensor_versioned" so that
+            // the capsule destructor does not free the tensor
+            let status = pyo3::ffi::PyCapsule_SetName(
+                capsule.as_ptr(), USED_DLTENSOR_VERSIONED_NAME.as_ptr()
+            );
+            if status != 0 {
+                return Err(PyErr::fetch(capsule.py()));
+            }
+
+            return Ok(DLPackTensor::from_raw(pointer));
         }
     }
 }
@@ -333,7 +336,7 @@ unsafe extern "C" fn rust_capsule_deleter(object: *mut pyo3::ffi::PyObject) {
     // PyCapsule_IsValid checks the the pointer is not null
     let tensor = NonNull::new(ptr.cast::<DLManagedTensorVersioned>())
         .expect("the capsule should be non-null");
-    std::mem::drop(DLPackTensor::from_ptr(tensor));
+    std::mem::drop(DLPackTensor::from_raw(tensor));
 }
 
 impl TryFrom<DLPackTensor> for PyDLPack {
@@ -876,6 +879,115 @@ assert np.allclose(array, expected)
 
             // Cleanup the leaked memory since the capsule didn't take ownership
             unsafe { drop(Box::from_raw(managed)); }
+            Ok(())
+        })
+    }
+
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn test_empty_ndarray_to_numpy() -> PyResult<()> {
+        Python::initialize();
+        Python::attach(|py| {
+            use ndarray::Array3;
+
+            let rust_array: Array3<f64> = Array3::from_shape_vec([0, 0, 0], vec![]).unwrap();
+            let dl_tensor = DLPackTensor::try_from(rust_array).unwrap();
+            let tensor = PyDLPack::try_from(dl_tensor).unwrap();
+
+            let locals = PyDict::new(py);
+            locals.set_item("np", py.import("numpy")?)?;
+            locals.set_item("tensor", tensor)?;
+
+            let code = c_str!(
+                "
+array = np.from_dlpack(tensor)
+assert array.shape == (0, 0, 0), f\"got shape {array.shape}\"
+assert array.ndim == 3
+assert array.size == 0
+"
+            );
+            py.run(code, None, Some(&locals))?;
+            Ok(())
+        })
+    }
+
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn test_empty_numpy_to_ndarray() -> PyResult<()> {
+        Python::initialize();
+        Python::attach(|py| {
+            let locals = PyDict::new(py);
+            locals.set_item("np", py.import("numpy")?)?;
+
+            let code = c_str!(
+                "
+array = np.empty((0, 0, 0), dtype=np.float64)
+result_capsule = array.__dlpack__()
+"
+            );
+            py.run(code, None, Some(&locals))?;
+
+            let result = locals.get_item("result_capsule")?.unwrap();
+            let capsule: Bound<PyCapsule> = result.extract()?;
+
+            let dlpack_ref = DLPackTensorRef::try_from(capsule)?;
+            use ndarray::ArrayView3;
+            let array = ArrayView3::<f64>::try_from(dlpack_ref).unwrap();
+
+            assert_eq!(array.shape(), [0, 0, 0]);
+            assert!(array.is_empty());
+            Ok(())
+        })
+    }
+
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn test_scalar_ndarray_to_numpy() -> PyResult<()> {
+        Python::initialize();
+        Python::attach(|py| {
+            let rust_array = ndarray::arr0(3.41f64);
+            let dl_tensor = DLPackTensor::try_from(rust_array).unwrap();
+            let tensor = PyDLPack::try_from(dl_tensor).unwrap();
+
+            let locals = PyDict::new(py);
+            locals.set_item("np", py.import("numpy")?)?;
+            locals.set_item("tensor", tensor)?;
+
+            let code = c_str!(
+                "
+array = np.from_dlpack(tensor)
+assert array.ndim == 0, f\"got ndim {array.ndim}\"
+assert array.size == 1
+assert np.allclose(array, 3.41)
+"
+            );
+            py.run(code, None, Some(&locals))?;
+            Ok(())
+        })
+    }
+
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn test_scalar_numpy_to_ndarray() -> PyResult<()> {
+        Python::initialize();
+        Python::attach(|py| {
+            let locals = PyDict::new(py);
+            locals.set_item("np", py.import("numpy")?)?;
+
+            let code = c_str!(
+                "
+array = np.array(42.0)
+result_capsule = array.__dlpack__()
+"
+            );
+            py.run(code, None, Some(&locals))?;
+
+            let result = locals.get_item("result_capsule")?.unwrap();
+            let capsule: Bound<PyCapsule> = result.extract()?;
+
+            let dlpack_ref = DLPackTensorRef::try_from(capsule)?;
+            let array = ndarray::ArrayView0::<f64>::try_from(dlpack_ref).unwrap();
+            assert_eq!(array[()], 42.0);
             Ok(())
         })
     }
