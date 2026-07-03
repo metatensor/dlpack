@@ -53,7 +53,7 @@ use pyo3::PyErr;
 /// Possible error causes when converting between ndarray and DLPack
 #[derive(Debug)]
 pub enum DLPackNDarrayError {
-    /// ndarray only support data which lives on CPU
+    /// ndarray only support data which lives on CPU or host-accessible memory
     DeviceShouldBeCpu(sys::DLDevice),
     /// The DLPack type can not be converted to a supported Rust type
     InvalidType(CastError),
@@ -85,7 +85,7 @@ impl std::fmt::Display for DLPackNDarrayError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             DLPackNDarrayError::DeviceShouldBeCpu(device) => {
-                write!(f, "can not convert from device {} (only cpu is supported)", device)
+                write!(f, "can not convert from device {} (only CPU, CUDA host, and ROCm host are supported)", device)
             }
             DLPackNDarrayError::InvalidType(error) => {
                 write!(f, "type conversion error: {}", error)
@@ -107,6 +107,17 @@ impl std::error::Error for DLPackNDarrayError {
     }
 }
 
+/// Check whether a device type has host-accessible memory, i.e. the data
+/// pointer can be dereferenced from the CPU without an explicit copy.
+fn is_host_accessible(device_type: sys::DLDeviceType) -> bool {
+    matches!(
+        device_type,
+        sys::DLDeviceType::kDLCPU
+        | sys::DLDeviceType::kDLCUDAHost
+        | sys::DLDeviceType::kDLROCMHost
+    )
+}
+
 /*****************************************************************************/
 /*                            DLPack => ndarray                              */
 /*****************************************************************************/
@@ -118,7 +129,7 @@ impl<'a, T, D> TryFrom<DLPackTensorRef<'a>> for ndarray::ArrayView<'a, T, D> whe
     type Error = DLPackNDarrayError;
 
     fn try_from(tensor: DLPackTensorRef<'a>) -> Result<Self, Self::Error> {
-        if tensor.device().device_type != sys::DLDeviceType::kDLCPU {
+        if !is_host_accessible(tensor.device().device_type) {
             return Err(DLPackNDarrayError::DeviceShouldBeCpu(tensor.device()))
         }
 
@@ -152,7 +163,7 @@ impl<'a, T, D> TryFrom<DLPackTensorRefMut<'a>> for ndarray::ArrayViewMut<'a, T, 
     type Error = DLPackNDarrayError;
 
     fn try_from(mut tensor: DLPackTensorRefMut<'a>) -> Result<Self, Self::Error> {
-        if tensor.device().device_type != sys::DLDeviceType::kDLCPU {
+        if !is_host_accessible(tensor.device().device_type) {
             return Err(DLPackNDarrayError::DeviceShouldBeCpu(tensor.device()))
         }
 
@@ -590,7 +601,9 @@ mod tests {
 
         let dlpack_ref = unsafe { DLPackTensorRef::from_raw(dl_tensor) };
         let result = ArrayView1::<f32>::try_from(dlpack_ref);
-        assert!(matches!(result, Err(DLPackNDarrayError::DeviceShouldBeCpu(_))));
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("only CPU"), "got: {}", err);
     }
 
     #[test]

@@ -19,7 +19,7 @@ use crate::{CastError, DLPackPointerCast, GetDLPackDataType};
 /// Possible error causes when converting between Vec/slice and DLPack
 #[derive(Debug)]
 pub enum DLPackVecError {
-    /// We only support data which lives on CPU
+    /// We only support data which lives on CPU or host-accessible memory
     DeviceShouldBeCpu(sys::DLDevice),
     /// The DLPack type can not be converted to a supported Rust type
     InvalidType(CastError),
@@ -31,7 +31,7 @@ impl std::fmt::Display for DLPackVecError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             DLPackVecError::DeviceShouldBeCpu(device) => {
-                write!(f, "can not convert from device {} (only cpu is supported)", device)
+                write!(f, "can not convert from device {} (only CPU, CUDA host, and ROCm host are supported)", device)
             }
             DLPackVecError::InvalidType(error) => {
                 write!(f, "type conversion error: {}", error)
@@ -59,9 +59,20 @@ impl From<CastError> for DLPackVecError {
     }
 }
 
+/// Check whether a device type has host-accessible memory, i.e. the data
+/// pointer can be dereferenced from the CPU without an explicit copy.
+fn is_host_accessible(device_type: sys::DLDeviceType) -> bool {
+    matches!(
+        device_type,
+        sys::DLDeviceType::kDLCPU
+        | sys::DLDeviceType::kDLCUDAHost
+        | sys::DLDeviceType::kDLROCMHost
+    )
+}
+
 /// Check that the DLPackTensor is on CPU, and return the size of the vector.
 fn check_tensor(tensor: &DLPackTensorRef<'_>) -> Result<usize, DLPackVecError> {
-    if tensor.device().device_type != sys::DLDeviceType::kDLCPU {
+    if !is_host_accessible(tensor.device().device_type) {
         return Err(DLPackVecError::DeviceShouldBeCpu(tensor.device()));
     }
 
