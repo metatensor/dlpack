@@ -232,12 +232,15 @@ impl std::fmt::Debug for DLPackTensor {
             flags_strings.join(" | ")
         };
 
+        let debug_tensor = unsafe {
+            DLTensorDebug(&self.raw.as_ref().dl_tensor)
+        };
         f.debug_struct("DLPackTensor")
             .field("version", unsafe { &self.raw.as_ref().version })
             .field("manager_ctx", unsafe { &self.raw.as_ref().manager_ctx })
             .field("deleter", unsafe { &self.raw.as_ref().deleter })
             .field("flags", &flags_string)
-            .field("dl_tensor", unsafe { &DLTensorDebug(&self.raw.as_ref().dl_tensor) })
+            .field("dl_tensor", &debug_tensor)
             .finish()
     }
 }
@@ -262,7 +265,9 @@ impl DLPackTensor {
     pub unsafe fn from_ptr(tensor: *mut sys::DLManagedTensorVersioned) -> DLPackTensor {
         let tensor = NonNull::new(tensor).expect("DLManagedTensorVersioned pointer is null");
 
-        return DLPackTensor::from_raw(tensor);
+        return unsafe {
+            DLPackTensor::from_raw(tensor)
+        };
     }
 
     /// Create a `DLPackTensor` from a non-null pointer to
@@ -272,15 +277,18 @@ impl DLPackTensor {
     ///
     /// The same safety requirements as `from_ptr` apply.
     pub unsafe fn from_raw(tensor: NonNull<sys::DLManagedTensorVersioned>) -> DLPackTensor {
-        if tensor.as_ref().version.major != sys::DLPACK_MAJOR_VERSION {
+        let tensor_ref = unsafe { tensor.as_ref() };
+        if tensor_ref.version.major != sys::DLPACK_MAJOR_VERSION {
             // from the spec, we need to call the deleter here (and it is the
             // only thing we can do)
-            if let Some(deleter) = tensor.as_ref().deleter {
-                deleter(tensor.as_ptr());
+            if let Some(deleter) = tensor_ref.deleter {
+                unsafe {
+                    deleter(tensor.as_ptr());
+                }
             }
             panic!(
                 "Incompatible DLPack version, got {}, but this code only supports version {}",
-                tensor.as_ref().version.major, sys::DLPACK_MAJOR_VERSION
+                tensor_ref.version.major, sys::DLPACK_MAJOR_VERSION
             );
         }
         return DLPackTensor{

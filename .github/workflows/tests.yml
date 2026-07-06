@@ -15,7 +15,7 @@ jobs:
     strategy:
       matrix:
         toolchain:
-          - "1.74"
+          - "1.88"
           - stable
           - nightly
     steps:
@@ -26,19 +26,6 @@ jobs:
 
       - name: Setup sccache-cache
         uses: mozilla-actions/sccache-action@v0.0.9
-
-      # MSRV backfill: pyo3 0.28 requires rustc >=1.83 and pyo3 0.27 is
-      # the last line with MSRV 1.74. dlpk accepts `>=0.27, <0.29`, so we
-      # pin the pyo3 stack to the 0.27 line for the 1.74 job only. Stable
-      # and nightly resolve to 0.28 naturally.
-      - name: Pin pyo3 to 0.27 on MSRV toolchain
-        if: matrix.toolchain == '1.74'
-        run: |
-          cargo update -p pyo3 --precise 0.27.2
-          cargo update -p pyo3-build-config --precise 0.27.2
-          cargo update -p pyo3-macros --precise 0.27.2
-          cargo update -p pyo3-macros-backend --precise 0.27.2
-          cargo update -p pyo3-ffi --precise 0.27.2
 
       - name: Run tests
         env:

@@ -156,10 +156,8 @@ impl PyDLPack {
         // we can ignore `max_version`, the consumer is supposed to check it again
         // anyway
 
-        if let Some(device) = dl_device {
-            if device.ne(self.__dlpack_device__(py)?)? {
-                return Err(PyErr::new::<PyBufferError, _>("unsupported `dl_device`"));
-            }
+        if let Some(device) = dl_device && device.ne(self.__dlpack_device__(py)?)? {
+            return Err(PyErr::new::<PyBufferError, _>("unsupported `dl_device`"));
         }
 
         if copy.is_some() {
@@ -279,23 +277,25 @@ impl<'py> TryFrom<Bound<'py, PyCapsule>> for DLPackTensorRef<'py> {
 }
 
 unsafe extern "C" fn rust_capsule_deleter(object: *mut pyo3::ffi::PyObject) {
-    if pyo3::ffi::PyCapsule_IsValid(object, USED_DLTENSOR_VERSIONED_NAME.as_ptr()) == 1 {
-        // All good, the data was already transfered
-        return;
+    unsafe {
+        if pyo3::ffi::PyCapsule_IsValid(object, USED_DLTENSOR_VERSIONED_NAME.as_ptr()) == 1 {
+            // All good, the data was already transfered
+            return;
+        }
+
+        if !pyo3::ffi::PyCapsule_IsValid(object, DLTENSOR_VERSIONED_NAME.as_ptr()) == 1 {
+            // we got a bad capsule, send a warning
+            pyo3::ffi::PyErr_WriteUnraisable(object);
+            return;
+        }
+
+        let ptr = pyo3::ffi::PyCapsule_GetPointer(object, DLTENSOR_VERSIONED_NAME.as_ptr());
+
+        // PyCapsule_IsValid checks the the pointer is not null
+        let tensor = NonNull::new(ptr.cast::<DLManagedTensorVersioned>())
+            .expect("the capsule should be non-null");
+        std::mem::drop(DLPackTensor::from_raw(tensor));
     }
-
-    if !pyo3::ffi::PyCapsule_IsValid(object, DLTENSOR_VERSIONED_NAME.as_ptr()) == 1 {
-        // we got a bad capsule, send a warning
-        pyo3::ffi::PyErr_WriteUnraisable(object);
-        return;
-    }
-
-    let ptr = pyo3::ffi::PyCapsule_GetPointer(object, DLTENSOR_VERSIONED_NAME.as_ptr());
-
-    // PyCapsule_IsValid checks the the pointer is not null
-    let tensor = NonNull::new(ptr.cast::<DLManagedTensorVersioned>())
-        .expect("the capsule should be non-null");
-    std::mem::drop(DLPackTensor::from_raw(tensor));
 }
 
 impl TryFrom<DLPackTensor> for PyDLPack {
