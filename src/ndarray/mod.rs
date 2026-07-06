@@ -403,12 +403,14 @@ struct ManagerContext<T> {
 }
 
 unsafe extern "C" fn deleter_fn<T>(tensor: *mut sys::DLManagedTensorVersioned) {
-    // Reconstruct the box and drop it, freeing the memory.
-    let ctx = (*tensor).manager_ctx.cast::<ManagerContext<T>>();
-    let _ = Box::from_raw(ctx);
+    unsafe {
+        // Reconstruct the box and drop it, freeing the memory.
+        let ctx = (*tensor).manager_ctx.cast::<ManagerContext<T>>();
+        let _ = Box::from_raw(ctx);
 
-    // also drop the tensor itself
-    let _ = Box::from_raw(tensor);
+        // also drop the tensor itself
+        let _ = Box::from_raw(tensor);
+    }
 }
 
 impl<T, D> TryFrom<Array<T, D>> for DLPackTensor
@@ -801,7 +803,9 @@ mod tests {
     }
 
     unsafe extern "C" fn box_deleter(tensor: *mut sys::DLManagedTensorVersioned) {
-        let _ = Box::from_raw(tensor);
+        unsafe {
+            let _ = Box::from_raw(tensor);
+        }
     }
 
     #[test]

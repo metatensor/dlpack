@@ -38,12 +38,14 @@ struct MutexCtx<T> where T: 'static {
 }
 
 unsafe extern "C" fn mutex_deleter_fn<T>(tensor: *mut sys::DLManagedTensorVersioned) where T: 'static {
-    // Reconstruct the box and drop it, freeing the memory.
-    let ctx = (*tensor).manager_ctx.cast::<MutexCtx<T>>();
-    let _ = Box::from_raw(ctx);
+    unsafe {
+        // Reconstruct the box and drop it, freeing the memory.
+        let ctx = (*tensor).manager_ctx.cast::<MutexCtx<T>>();
+        let _ = Box::from_raw(ctx);
 
-    // also drop the tensor itself
-    let _ = Box::from_raw(tensor);
+        // also drop the tensor itself
+        let _ = Box::from_raw(tensor);
+    }
 }
 
 impl<T> TryFrom<Arc<Mutex<Vec<T>>>> for DLPackTensor where T: GetDLPackDataType + 'static {
@@ -132,21 +134,25 @@ struct RwLockCtxWrite<T> where T: 'static {
 }
 
 unsafe extern "C" fn rwlock_read_deleter_fn<T>(tensor: *mut sys::DLManagedTensorVersioned) where T: 'static {
-    // Reconstruct the box and drop it, freeing the memory.
-    let ctx = (*tensor).manager_ctx.cast::<RwLockCtxRead<T>>();
-    let _ = Box::from_raw(ctx);
+    unsafe {
+        // Reconstruct the box and drop it, freeing the memory.
+        let ctx = (*tensor).manager_ctx.cast::<RwLockCtxRead<T>>();
+        let _ = Box::from_raw(ctx);
 
-    // also drop the tensor itself
-    let _ = Box::from_raw(tensor);
+        // also drop the tensor itself
+        let _ = Box::from_raw(tensor);
+    }
 }
 
 unsafe extern "C" fn rwlock_write_deleter_fn<T>(tensor: *mut sys::DLManagedTensorVersioned) where T: 'static {
-    // Reconstruct the box and drop it, freeing the memory.
-    let ctx = (*tensor).manager_ctx.cast::<RwLockCtxWrite<T>>();
-    let _ = Box::from_raw(ctx);
+    unsafe {
+        // Reconstruct the box and drop it, freeing the memory.
+        let ctx = (*tensor).manager_ctx.cast::<RwLockCtxWrite<T>>();
+        let _ = Box::from_raw(ctx);
 
-    // also drop the tensor itself
-    let _ = Box::from_raw(tensor);
+        // also drop the tensor itself
+        let _ = Box::from_raw(tensor);
+    }
 }
 
 impl<T> TryFrom<ReadWrite<Arc<RwLock<Vec<T>>>>> for DLPackTensor where T: GetDLPackDataType + 'static {
