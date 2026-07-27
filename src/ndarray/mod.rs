@@ -677,7 +677,7 @@ mod tests {
 
         // To check correctness, we can create a view from the managed tensor's data.
         let view = unsafe {
-            let tensor_ref = DLPackTensorRef::from_raw(raw.clone());
+            let tensor_ref = DLPackTensorRef::from_raw(*raw);
             ndarray::ArrayView2::<i64>::try_from(tensor_ref).unwrap()
         };
         assert_eq!(view, arr2(&[[1, 2, 3], [4, 5, 6]]));

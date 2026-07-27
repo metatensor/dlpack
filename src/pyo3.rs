@@ -267,9 +267,7 @@ impl<'py> TryFrom<Bound<'py, PyCapsule>> for DLPackTensorRef<'py> {
 
             // SAFETY: The lifetime of the returned reference is tied to the
             // lifetime GIL lifetime.
-            let tensor = unsafe {
-                DLPackTensorRef::from_raw(dltensor.clone())
-            };
+            let tensor = unsafe { DLPackTensorRef::from_raw(*dltensor) };
 
             Ok(tensor)
         })
