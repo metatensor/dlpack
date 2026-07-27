@@ -195,7 +195,7 @@ struct DLTensorDebug<'a>(&'a sys::DLTensor);
 impl std::fmt::Debug for DLTensorDebug<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let tensor_ref = unsafe {
-            DLPackTensorRef::from_raw(self.0.clone())
+            DLPackTensorRef::from_raw(*self.0)
         };
         debug_tensor(&tensor_ref, f, "DLTensor")
     }
@@ -300,7 +300,7 @@ impl DLPackTensor {
     pub fn as_ref(&self) -> DLPackTensorRef<'_> {
         unsafe {
             // SAFETY: we are constaining the returned reference lifetime
-            DLPackTensorRef::from_raw(self.raw.as_ref().dl_tensor.clone())
+            DLPackTensorRef::from_raw(self.raw.as_ref().dl_tensor)
         }
     }
 
@@ -320,7 +320,7 @@ impl DLPackTensor {
             // SAFETY: we are constraining the returned reference lifetime
             // the caller must ensure that the uniqueness check doesn't apply
             // i.e. they're fine mutating an ArcArray with refcount > 1
-            DLPackTensorRefMut::from_raw(self.raw.as_ref().dl_tensor.clone())
+            DLPackTensorRefMut::from_raw(self.raw.as_ref().dl_tensor)
         }
     }
 
@@ -434,6 +434,7 @@ impl DLPackTensor {
 
 /// A reference to a DLPack tensor, with data borrowed from some owner,
 /// potentially in another language.
+#[derive(Clone, Copy)]
 pub struct DLPackTensorRef<'a> {
     pub raw: sys::DLTensor,
     phantom: std::marker::PhantomData<&'a [u8]>,
@@ -519,7 +520,7 @@ impl<'a> DLPackTensorRef<'a> {
 /// potentially in another language.
 pub struct DLPackTensorRefMut<'a> {
     raw: sys::DLTensor,
-    phantom: std::marker::PhantomData<&'a [u8]>,
+    phantom: std::marker::PhantomData<&'a mut [u8]>,
 }
 
 impl std::fmt::Debug for DLPackTensorRefMut<'_> {
@@ -548,7 +549,7 @@ impl<'a> DLPackTensorRefMut<'a> {
     pub fn as_ref(&self) -> DLPackTensorRef<'_> {
         unsafe {
             // SAFETY: we are constaining the returned reference lifetime
-            DLPackTensorRef::from_raw(self.raw.clone())
+            DLPackTensorRef::from_raw(self.raw)
         }
     }
 
@@ -624,10 +625,12 @@ pub mod sync;
 
 /// Small wrapper type to mark a tensor as read-only when there is a choice
 /// between a read-only and a read-write implementation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ReadOnly<T>(pub T);
 
 /// Small wrapper type to mark a tensor as read-write when there is a choice
 /// between a read-only and a read-write implementation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ReadWrite<T>(pub T);
 
 

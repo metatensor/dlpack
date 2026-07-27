@@ -246,7 +246,7 @@ impl std::fmt::Display for DLDataType {
 
 /// Plain C Tensor object, does not manage memory.
 #[repr(C)]
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct DLTensor {
     /// The data pointer points to the allocated data. This will be CUDA device
     /// pointer or cl_mem handle in OpenCL. It may be opaque on some device
