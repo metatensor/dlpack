@@ -528,6 +528,14 @@ pub type DLPackManagedTensorToPyObjectNoSync = Option<unsafe extern "C" fn(
     out_py_object: *mut *mut std::os::raw::c_void
 ) -> i32>;
 
+/// Name of the PyCapsule exposing a [`DLPackExchangeAPI`] via the
+/// `__dlpack_c_exchange_api__` class attribute.
+pub const DLPACK_EXCHANGE_API_CAPSULE_NAME: &std::ffi::CStr =
+    match std::ffi::CStr::from_bytes_with_nul(b"dlpack_exchange_api\0") {
+        Ok(s) => s,
+        Err(_) => panic!("capsule name must be a valid C string"),
+    };
+
 /// DLPackExchangeAPI stable header.
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
